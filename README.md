@@ -9,7 +9,7 @@
 
    `https://github.com/j36200200-sketch/sillytavern-soundwalk`
 
-3. 确认安装并刷新酒馆页面，轻点音符按钮打开播放器。按住音符直接拖动，可放在屏幕任意不越界的位置。
+3. 确认安装并刷新酒馆页面，轻点音符按钮打开播放器。按住音符直接拖动，可放在屏幕任意不越界的位置。v1.0.2 优化了安卓触屏轻点打开逻辑。
 
 > 这个链接需要仓库已创建且文件在仓库根目录。当前扩展不提供音源，需自行添加合法音频直链或设备上的本地音频。
 
@@ -25,14 +25,14 @@
 
 ## 下载安装（Termux / 安卓本地部署）
 
-1. 在手机浏览器下载 `soundwalk-player-v1.0.1.zip`，文件保持 ZIP 格式。
+1. 在手机浏览器下载 `soundwalk-player-v1.0.2.zip`，文件保持 ZIP 格式。
 2. 在 Termux 中进入 SillyTavern 项目目录，例：`cd ~/SillyTavern`。
 3. 安装 unzip：`pkg install unzip -y`。
 4. 解压到当前用户扩展目录：
 
 ```sh
 mkdir -p data/default-user/extensions
-unzip -o ~/storage/downloads/soundwalk-player-v1.0.0.zip -d data/default-user/extensions
+unzip -o ~/storage/downloads/soundwalk-player-v1.0.2.zip -d data/default-user/extensions
 ls data/default-user/extensions/soundwalk-player
 ```
 
@@ -57,7 +57,7 @@ ls data/default-user/extensions/soundwalk-player
 
 ## 常见问题
 
-- **按钮能看到却点不开：** 请先在酒馆扩展管理中更新到 v1.0.1 并强制刷新页面。如果仍无反应，可暂时停用其他浮动插件作兼容排查。
+- **按钮能看到却点不开：** 请先在酒馆扩展管理中更新到 v1.0.2 并刷新页面。如果仍无反应，可暂时停用其他浮动插件作兼容排查。
 - **移动按钮：** 按住绿色音符拖动；轻点才会打开。位置保存到当前浏览器的 localStorage。
 
 - **按钮不出现：** 检查扩展是否启用、文件夹层级是否正确、是否刷新并重启酒馆。路径应是 `.../extensions/soundwalk-player/manifest.json` 而不是双层嵌套。
