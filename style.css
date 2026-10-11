@@ -36,7 +36,7 @@
 @keyframes sw-beat { 50% { transform: scale(1.5); opacity: .45; } }
 /* Dialog is promoted into the browser top layer, above SillyTavern themes. */
 #soundwalk-player-root dialog.sw-panel {
-  position: fixed !important; inset: auto auto max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)) !important;
+  position: fixed !important; inset: 8px auto auto 8px !important;
   margin: 0 !important; padding: 0 !important;
   width: min(365px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 30px));
   display: flex !important; flex-direction: column !important; overflow: hidden !important;
@@ -110,7 +110,7 @@
 #soundwalk-player-root .sw-notice { display:none; position:absolute; left:15px; right:15px; bottom:38px; z-index:2; margin:0; padding:10px 12px; background:#e5eee2; color:#133330; border-radius:10px; box-shadow:0 8px 18px #0006; font-size:12px; }
 #soundwalk-player-root .sw-notice.sw-show { display:block; }
 @media(max-width:400px){
-  #soundwalk-player-root dialog.sw-panel { width:calc(100vw - 16px); inset:auto auto max(8px,env(safe-area-inset-bottom)) 8px !important; max-height:calc(100dvh - 16px); }
+  #soundwalk-player-root dialog.sw-panel { width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
   #soundwalk-player-root .sw-header { min-height:57px; }
   #soundwalk-player-root .sw-now { padding-top:10px; }
   #soundwalk-player-root .sw-scene { width:60px; height:60px; }
