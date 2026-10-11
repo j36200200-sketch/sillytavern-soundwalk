@@ -1,0 +1,74 @@
+# 听风 · Soundwalk Music — SillyTavern 独立音乐播放器
+
+一个独立实现的、适合在手机浏览器和桌面 SillyTavern 中边聊天边听歌的前端扩展。**没有内置歌曲、网络曲库、商业音乐平台接口，也不提供任何未经许可的音频或图片。**
+
+## 推荐安装（GitHub 第三方前端扩展）
+
+1. 打开 SillyTavern → **扩展** → **安装扩展（Install Extension）**。
+2. 粘贴以下公开仓库地址：
+
+   `https://github.com/j36200200-sketch/sillytavern-soundwalk`
+
+3. 确认安装并刷新酒馆页面，点击左侧音符按钮即可使用。
+
+> 这个链接需要仓库已创建且文件在仓库根目录。当前扩展不提供音源，需自行添加合法音频直链或设备上的本地音频。
+
+## 功能
+
+- 左侧音符按钮打开浮动播放器，不依赖角色卡、世界书或聊天消息。
+- 播放 / 暂停、上一首 / 下一首、拖动进度、调节音量 / 静音。
+- 列表循环、单曲循环、随机播放；15 / 30 / 60 分钟定时停止。
+- 添加、编辑、删除合法的 **HTTP(S) 音频直链**；支持从设备选择本地音频。
+- 浏览器本地保存歌曲信息；本地文件使用 IndexedDB 存储，不上传到任何服务器。
+- 导出 / 导入网络音频歌单 JSON；JSON **不包含本地音频文件**，也不包含真实音频字节。
+
+## 下载安装（Termux / 安卓本地部署）
+
+1. 在手机浏览器下载 `soundwalk-player-v1.0.0.zip`，文件保持 ZIP 格式。
+2. 在 Termux 中进入 SillyTavern 项目目录，例：`cd ~/SillyTavern`。
+3. 安装 unzip：`pkg install unzip -y`。
+4. 解压到当前用户扩展目录：
+
+```sh
+mkdir -p data/default-user/extensions
+unzip -o ~/storage/downloads/soundwalk-player-v1.0.0.zip -d data/default-user/extensions
+ls data/default-user/extensions/soundwalk-player
+```
+
+应能看到 `manifest.json index.js style.css README.md LICENSE` 等文件。重启酒馆服务并刷新浏览器页面。
+
+> 若你启用了多用户模式，则将 `data/default-user/extensions` 替换为 `data/<用户目录>/extensions`。
+> 如果 ZIP 保存到别的目录，修改 unzip 命令的 ZIP 路径。`termux-setup-storage` 可授权 Termux 访问 Android 下载目录。
+
+## 其他设备安装
+
+从 ZIP 解压出 **`soundwalk-player` 这个文件夹**，整个文件夹放在当前 SillyTavern 用户数据目录 `data/<user-handle>/extensions/` 下；也可按酒馆官方文档放在 `public/scripts/extensions/third-party/`，作为全用户安装的前端扩展。重启并刷新浏览器。
+
+官方说明：https://docs.sillytavern.app/for-contributors/writing-extensions/
+
+## 使用指南
+
+1. 点击页面左侧绿色音符按钮。
+2. 选择「+ 链接」，填入歌名与**可在浏览器直接播放**的 `.mp3`、`.m4a`、`.ogg` 等音频 HTTP(S) 地址；音乐平台的普通分享网页 URL 通常**不是**音频直链。
+3. 或点击「+ 本地」，选择设备上的音频文件；本地文件存放在该浏览器的 IndexedDB，不能自动同步到其他设备。
+4. 播放列表每首歌曲可以点击播放；链接歌曲可以编辑，任意歌曲可以删除。
+5. 「导出歌单」只会保存链接歌曲的标题、歌手和 URL；本地音频请另行自行备份原始文件。
+
+## 常见问题
+
+- **按钮不出现：** 检查扩展是否启用、文件夹层级是否正确、是否刷新并重启酒馆。路径应是 `.../extensions/soundwalk-player/manifest.json` 而不是双层嵌套。
+- **链接歌曲不能播放：** 链接可能已失效、非直链、跨域/反盗链受限、音频编码不受浏览器支持，或浏览器阻止了未经过用户交互的自动播放。
+- **切换聊天时：** 扩展属于酒馆页面的播放器，一般不会因酒馆内部切换聊天而中断。整页刷新、退出浏览器或系统后台限制可能会暂停。
+- **手机锁屏后不响：** 安卓系统 / 浏览器有后台播放与电池优化限制；本扩展无法保证锁屏或后台一直播放。
+- **不想使用：** 关闭扩展或删除文件夹；浏览器可能仍保留已导入本地歌曲，可在浏览器网站存储设置中清除对应站点数据。
+- **歌词？** 当前版本未包含歌词服务或第三方音乐 API。
+
+## 隐私与安全
+
+扩展无需外部库、无需 API Key，不读取聊天记录或角色卡。只向用户输入的音频链接发起常规媒体加载请求；本地音频留在浏览器 IndexedDB。安装任何第三方扩展前，都应检查来源与代码。
+
+## 分享及授权
+
+源代码以 [MIT License](LICENSE) 公开。你可以非商业或商业使用、修改、再次发布本独立实现的源码，但请保留许可及版权声明。**分享 ZIP 不意味着你有权再分发添加的歌曲、封面或第三方素材。** 发布者可将歌曲链接留空，由每个玩家自己添加合法来源。
+
+该项目独立实现通用播放器功能，不是其他播放器的改编或移植；未使用任何第三方播放器的原始代码、专属图片或示例歌单。仅与 SillyTavern 兼容，不代表官方制作或背书。
