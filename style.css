@@ -29,6 +29,7 @@
   z-index: 2147483647 !important; transition: transform .15s;
 }
 #soundwalk-player-root .sw-orb:hover { transform: translateY(-2px); }
+#soundwalk-player-root .sw-orb.sw-open { background: linear-gradient(135deg,#fff0c9,#b7e4c2); box-shadow: 0 0 0 3px #fff7dc88, 0 6px 24px #041b1c63; }
 #soundwalk-player-root .sw-orb.sw-dragging { cursor: grabbing; transform: none !important; transition: none !important; }
 #soundwalk-player-root .sw-orb-pulse { position: absolute; width: 6px; height: 6px; top: 7px; right: 7px; border-radius: 50%; background: #fe9b72; opacity: 0; }
 #soundwalk-player-root .sw-orb.sw-active .sw-orb-pulse { opacity: 1; animation: sw-beat 1.6s ease-in-out infinite; }
