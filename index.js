@@ -115,7 +115,7 @@ function init() {
     <button class="sw-orb" type="button" aria-label="打开听风音乐播放器" aria-expanded="false">
       ${icons.music}<span class="sw-orb-pulse" aria-hidden="true"></span>
     </button>
-    <div class="sw-panel" role="region" aria-label="听风播放器" hidden>
+    <dialog id="soundwalk-player-modal" class="sw-panel" aria-label="听风播放器">
       <header class="sw-header">
         <div class="sw-brand"><span class="sw-brand-dot"></span><div><strong>听风</strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
         <button class="sw-icon sw-close" type="button" aria-label="关闭播放器">${icons.close}</button>
@@ -148,7 +148,7 @@ function init() {
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
       <p class="sw-notice" role="status" aria-live="polite"></p>
-    </div>`;
+    </dialog>`;
   document.body.append(root);
   const $ = selector => root.querySelector(selector);
   const orb = $('.sw-orb');
@@ -230,7 +230,7 @@ function init() {
       // Toggle directly on pointerup: some Android browsers omit click after
       // gesture interception or pointer capture.
       lastPointerTapAt = Date.now();
-      showPanel(panel.hidden);
+      showPanel(!isPanelOpen());
     }
     event.stopPropagation();
   }
@@ -249,13 +249,43 @@ function init() {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
-  function showPanel(show) {
-    panel.hidden = !show;
-    orb.classList.toggle('sw-open', show);
-    orb.setAttribute('aria-expanded', String(show));
-    if (show) $('.sw-close').focus({preventScroll:true});
-    else orb.focus({preventScroll:true});
+  // The native modal dialog goes into the browser top layer, so a
+  // SillyTavern theme cannot cover it using ordinary z-index stacking.
+  const dialogSupported = typeof panel.showModal === 'function';
+  function isPanelOpen() {
+    return (dialogSupported && panel.open) || panel.classList.contains('sw-fallback-open');
   }
+  function syncPanelState() {
+    const open = isPanelOpen();
+    orb.classList.toggle('sw-open', open);
+    orb.setAttribute('aria-expanded', String(open));
+    orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : '打开听风音乐播放器');
+  }
+  function showPanel(show) {
+    if (show === isPanelOpen()) return;
+    if (dialogSupported) {
+      try {
+        if (show) panel.showModal();
+        else panel.close();
+      } catch (error) {
+        // Fallback if the browser prevents top-layer modal presentation.
+        panel.classList.toggle('sw-fallback-open', show);
+        panel.hidden = !show;
+      }
+    } else {
+      panel.classList.toggle('sw-fallback-open', show);
+      panel.hidden = !show;
+    }
+    syncPanelState();
+    const focusTarget = show ? $('.sw-close') : orb;
+    try { focusTarget.focus({preventScroll:true}); }
+    catch { focusTarget.focus(); }
+  }
+  panel.addEventListener('cancel', event => {
+    event.preventDefault();
+    showPanel(false);
+  });
+  panel.addEventListener('close', syncPanelState);
   function formatTime(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
     return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
@@ -495,10 +525,10 @@ function init() {
     // double-toggling after an already handled pointerup.
     if (event.detail !== 0 && Date.now() - lastPointerTapAt < 750) return;
     if (event.detail !== 0 && Date.now() - lastDragEnd < 750) return;
-    showPanel(panel.hidden);
+    showPanel(!isPanelOpen());
   });
   $('.sw-close').addEventListener('click', () => showPanel(false));
-  root.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) showPanel(false); });
+  root.addEventListener('keydown', e => { if (e.key === 'Escape' && isPanelOpen()) showPanel(false); });
   playButton.addEventListener('click', () => audio.paused ? void play() : audio.pause());
   $('.sw-prev').addEventListener('click', () => advance(-1));
   $('.sw-next').addEventListener('click', () => advance(1));
