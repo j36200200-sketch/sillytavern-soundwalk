@@ -342,3 +342,50 @@
 }
 #soundwalk-player-root .sw-opacity-value {color:var(--sw-mint);font-size:12px;font-weight:600;}
 #soundwalk-player-root .sw-panel-opacity {width:100%;accent-color:var(--sw-mint);cursor:pointer;touch-action:pan-x;}
+
+/* v1.3.2 · real adjustable frosted glass, applied to background layers only. */
+#soundwalk-player-root dialog.sw-panel {
+  --sw-frost-radius:0px;
+  /* Blur the ST chat behind the floating dialog, never its controls. */
+  -webkit-backdrop-filter:blur(var(--sw-frost-radius)) saturate(1.12) !important;
+  backdrop-filter:blur(var(--sw-frost-radius)) saturate(1.12) !important;
+  /* A subtle dark backing prevents a bright chat theme from washing out text
+     when the user moves the opacity slider toward zero. */
+  background:linear-gradient(152deg,
+    rgba(36,65,77,calc(.12 + var(--sw-panel-alpha) * .88)) 0%,
+    rgba(21,37,47,calc(.12 + var(--sw-panel-alpha) * .88)) 45%,
+    rgba(17,33,43,calc(.12 + var(--sw-panel-alpha) * .88)) 100%) !important;
+}
+#soundwalk-player-root dialog.sw-panel.sw-wallpaper-on {
+  background:rgba(8,18,25,calc(.10 + var(--sw-panel-alpha) * .07)) !important;
+}
+/* Blur only the wallpaper painting, not the buttons, labels or track list. */
+#soundwalk-player-root dialog.sw-panel.sw-wallpaper-on::before {
+  filter:blur(var(--sw-frost-radius));
+  transform:scale(1.16);
+  transform-origin:center center;
+  will-change:filter;
+}
+/* A dark smoke veil softens bright wallpaper without making the card white. */
+#soundwalk-player-root dialog.sw-panel.sw-wallpaper-on::after {
+  background:linear-gradient(160deg,rgba(6,16,22,.30),rgba(8,17,25,.68));
+}
+#soundwalk-player-root .sw-frost-blur {
+  width:100%;
+  accent-color:var(--sw-mint);
+  cursor:pointer;
+  touch-action:pan-x;
+}
+#soundwalk-player-root .sw-blur-value {color:var(--sw-mint);font-size:12px;font-weight:600;}
+#soundwalk-player-root .sw-frost-preset {
+  width:100%;
+  padding:8px 10px;
+  border:1px solid #c8e6d666 !important;
+  border-radius:10px;
+  background:rgba(104,173,152,.24);
+  color:var(--sw-cream);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+}
+#soundwalk-player-root .sw-frost-preset:hover {background:rgba(104,173,152,.34);}

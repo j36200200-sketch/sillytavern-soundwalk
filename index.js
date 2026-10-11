@@ -77,7 +77,7 @@ function normalizeRoleOrders(raw) {
     .map(([key,ids]) => [key,[...new Set(ids.filter(id => typeof id === 'string' && id.length <= 150))].slice(0,MAX_TRACKS)]));
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', brandIcon: 'cat', panelOpacity: 100 };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0 };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -98,6 +98,10 @@ function readSettings() {
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
       brandIcon: data.brandIcon === 'paw' ? 'paw' : 'cat',
       panelOpacity: Number.isFinite(data.panelOpacity) ? Math.max(0, Math.min(100, Math.round(data.panelOpacity))) : 100,
+      // Older semi-transparent skins automatically gain a gentle frost once.
+      // Fully opaque skins retain their original clear artwork on upgrade.
+      frostBlur: Number.isFinite(data.frostBlur) ? Math.max(0, Math.min(30, Math.round(data.frostBlur))) :
+        (Number.isFinite(data.panelOpacity) && data.panelOpacity < 100 ? 12 : 0),
       manualFilter: typeof data.manualFilter === 'string' && data.manualFilter.length <= 320 ? data.manualFilter : 'all',
       characterLabels: Object.fromEntries(Object.entries(data.characterLabels && typeof data.characterLabels === 'object' && !Array.isArray(data.characterLabels) ? data.characterLabels : {})
         .filter(([k,v]) => k.startsWith('avatar:') && k.length <= 310 && typeof v === 'string').slice(0,300)
@@ -223,6 +227,7 @@ function init() {
   let openPet = settings.openPet;
   let brandIcon = settings.brandIcon;
   let panelOpacity = settings.panelOpacity;
+  let frostBlur = settings.frostBlur;
   let wallpaperUrl = null;
   let wallpaperRevision = 0;
   let wallpaperSaving = false;
@@ -260,7 +265,10 @@ function init() {
         <div class="sw-wallpaper-actions"><button class="sw-wallpaper-select" type="button">从手机相册选择壁纸</button><button class="sw-wallpaper-reset" type="button">恢复默认背景</button></div>
         <label class="sw-opacity-label" for="sw-panel-opacity"><span>背景不透明度</span><output class="sw-opacity-value" for="sw-panel-opacity">100%</output></label>
         <input id="sw-panel-opacity" class="sw-panel-opacity" type="range" min="0" max="100" step="5" value="100" aria-label="播放器背景不透明度" />
-        <p class="sw-appearance-hint">0% 最透明、100% 最实。壁纸也会随透明度淡入淡出；文字和按钮保持清楚。</p>
+        <label class="sw-opacity-label" for="sw-frost-blur"><span>毛玻璃虚化程度</span><output class="sw-blur-value" for="sw-frost-blur">0px</output></label>
+        <input id="sw-frost-blur" class="sw-frost-blur" type="range" min="0" max="30" step="2" value="0" aria-label="壁纸与播放器背后的模糊程度" />
+        <button class="sw-frost-preset" type="button">✨ 一键柔雾效果</button>
+        <p class="sw-appearance-hint">透明度控制背景浓淡；虚化控制壁纸和聊天背景的模糊程度。0px 清晰，14～20px 柔雾感较强；音乐控件和文字不会变模糊。</p>
       </section>
       <section id="soundwalk-pet-settings" class="sw-pet-settings" aria-label="宠物图标设置" hidden>
         <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是软乎乎黑猫 · 展开是萌萌小狗 · 贴纸头像无方形底框</span></div>
@@ -337,12 +345,16 @@ function init() {
   const appearanceBox=$('.sw-appearance');
   const appearanceToggle=$('.sw-appearance-toggle');
   const opacitySlider=$('.sw-panel-opacity');
+  const blurSlider=$('.sw-frost-blur');
   function applyAppearance() {
     panel.style.setProperty('--sw-panel-alpha', String(panelOpacity/100));
+    panel.style.setProperty('--sw-frost-radius', `${frostBlur}px`);
     panel.style.setProperty('--sw-wallpaper-image', wallpaperUrl ? `url("${wallpaperUrl}")` : 'none');
     panel.classList.toggle('sw-wallpaper-on',Boolean(wallpaperUrl));
     opacitySlider.value=String(panelOpacity);
     $('.sw-opacity-value').textContent=`${panelOpacity}%`;
+    blurSlider.value=String(frostBlur);
+    $('.sw-blur-value').textContent=`${frostBlur}px`;
     $('.sw-wallpaper-select').disabled=wallpaperSaving;
     $('.sw-wallpaper-reset').disabled=wallpaperSaving || (!wallpaperUrl && panelOpacity===100);
   }
@@ -354,6 +366,16 @@ function init() {
   opacitySlider.addEventListener('input',e=>{
     panelOpacity=Math.max(0,Math.min(100,Number(e.target.value)));
     applyAppearance();persist();
+  });
+  blurSlider.addEventListener('input',e=>{
+    frostBlur=Math.max(0,Math.min(30,Number(e.target.value)));
+    applyAppearance();persist();
+  });
+  $('.sw-frost-preset').addEventListener('click',()=>{
+    panelOpacity=75;
+    frostBlur=16;
+    applyAppearance();persist();
+    notice('柔雾效果已开启：75%背景 + 16px虚化，可继续细调');
   });
   $('.sw-wallpaper-select').addEventListener('click',()=>{
     wallpaperInput.value='';wallpaperInput.click();
@@ -383,7 +405,7 @@ function init() {
       await coverAction('delete',WALLPAPER_KEY);
       wallpaperRevision++;
       const old=wallpaperUrl;
-      wallpaperUrl=null;panelOpacity=100;
+      wallpaperUrl=null;panelOpacity=100;frostBlur=0;
       applyAppearance();persist();
       if(old) URL.revokeObjectURL(old);
       notice('已恢复默认墨绿色背景');
@@ -516,7 +538,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, brandIcon, panelOpacity}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, brandIcon, panelOpacity, frostBlur}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -1190,7 +1212,7 @@ function init() {
       }
       const meta = {format:'soundwalk-complete',version:2,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
-          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition,panelOpacity},entries};
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition,panelOpacity,frostBlur},entries};
       const payload = new TextEncoder().encode(JSON.stringify(meta));
       if (payload.length >= 999999999999) throw new Error('备份元数据超出限制');
       const prefix = 'SWBK1\n'+String(payload.length).padStart(12,'0');
@@ -1261,6 +1283,8 @@ function init() {
       openPet = meta.settings.openPet === 'shepherd' ? 'shepherd' : 'golden';
       brandIcon = meta.settings.brandIcon === 'paw' ? 'paw' : 'cat';
       panelOpacity = Number.isFinite(meta.settings.panelOpacity) ? Math.max(0,Math.min(100,Math.round(meta.settings.panelOpacity))) : 100;
+      frostBlur = Number.isFinite(meta.settings.frostBlur) ? Math.max(0,Math.min(30,Math.round(meta.settings.frostBlur))) :
+        (panelOpacity < 100 ? 12 : 0);
       if (!keys.has('wallpaper:'+WALLPAPER_KEY)) await coverAction('delete',WALLPAPER_KEY);
       if (meta.settings.orbPosition && Number.isFinite(meta.settings.orbPosition.x) && Number.isFinite(meta.settings.orbPosition.y)) {
         orbPosition = {x:Math.max(0,Math.min(1,meta.settings.orbPosition.x)),y:Math.max(0,Math.min(1,meta.settings.orbPosition.y))};
