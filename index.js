@@ -12,6 +12,8 @@ const DB_NAME = 'soundwalk-player-audio-v1';
 const DB_STORE = 'tracks';
 const COVER_STORE = 'covers';
 const COVER_MAX_BYTES = 12 * 1024 * 1024;
+const WALLPAPER_KEY = '__soundwalk_panel_wallpaper_v1__';
+const WALLPAPER_MAX_BYTES = 16 * 1024 * 1024;
 
 const icons = {
   music: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
@@ -75,7 +77,7 @@ function normalizeRoleOrders(raw) {
     .map(([key,ids]) => [key,[...new Set(ids.filter(id => typeof id === 'string' && id.length <= 150))].slice(0,MAX_TRACKS)]));
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', brandIcon: 'cat' };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', brandIcon: 'cat', panelOpacity: 100 };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -95,6 +97,7 @@ function readSettings() {
       roleOrders: normalizeRoleOrders(data.roleOrders),
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
       brandIcon: data.brandIcon === 'paw' ? 'paw' : 'cat',
+      panelOpacity: Number.isFinite(data.panelOpacity) ? Math.max(0, Math.min(100, Math.round(data.panelOpacity))) : 100,
       manualFilter: typeof data.manualFilter === 'string' && data.manualFilter.length <= 320 ? data.manualFilter : 'all',
       characterLabels: Object.fromEntries(Object.entries(data.characterLabels && typeof data.characterLabels === 'object' && !Array.isArray(data.characterLabels) ? data.characterLabels : {})
         .filter(([k,v]) => k.startsWith('avatar:') && k.length <= 310 && typeof v === 'string').slice(0,300)
@@ -175,6 +178,34 @@ async function makeCoverBlob(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+async function makeWallpaperBlob(file) {
+  if (!file || file.size > WALLPAPER_MAX_BYTES) throw new Error('壁纸不能超过16MB');
+  if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) throw new Error('请选择 JPG、PNG、WebP 或 GIF 壁纸');
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((resolve,reject) => {
+      img.onload=resolve;
+      img.onerror=()=>reject(new Error('无法读取这张壁纸'));
+      img.src=sourceUrl;
+    });
+    const w=img.naturalWidth,h=img.naturalHeight;
+    if (!w || !h || w*h>80000000) throw new Error('图片尺寸过大或无效');
+    const ratio=Math.min(1,1600/Math.max(w,h));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(w*ratio));
+    canvas.height=Math.max(1,Math.round(h*ratio));
+    const ctx=canvas.getContext('2d');
+    if (!ctx) throw new Error('浏览器无法处理壁纸');
+    ctx.fillStyle='#f5efe0';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.86));
+    if (!(blob instanceof Blob)) throw new Error('保存壁纸失败');
+    return blob;
+  } finally { URL.revokeObjectURL(sourceUrl); }
+}
+
 function init() {
   if (document.getElementById(ROOT_ID)) return;
   const settings = readSettings();
@@ -191,6 +222,10 @@ function init() {
   let autoRolePlayback = settings.autoRolePlayback;
   let openPet = settings.openPet;
   let brandIcon = settings.brandIcon;
+  let panelOpacity = settings.panelOpacity;
+  let wallpaperUrl = null;
+  let wallpaperRevision = 0;
+  let wallpaperSaving = false;
   let manualFilter = settings.manualFilter;
   let searchQuery = '';
   let currentCharacter = null;
@@ -217,9 +252,16 @@ function init() {
     <dialog id="soundwalk-player-modal" class="sw-panel" aria-label="听风播放器">
       <header class="sw-header">
         <div class="sw-brand"><button class="sw-brand-switch" type="button" aria-label="切换听风的小猫头和猫爪图标" title="点击切换猫头和猫爪"><img class="sw-brand-image" src="${brandAssets[brandIcon]}" alt="" draggable="false" decoding="async" /></button><div><strong>听风</strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
-        <div class="sw-header-actions"><button class="sw-icon sw-pet-settings-toggle" type="button" aria-label="宠物图标设置" title="宠物图标设置" aria-expanded="false" aria-controls="soundwalk-pet-settings">🐾</button>
+        <div class="sw-header-actions"><button class="sw-icon sw-appearance-toggle" type="button" aria-label="播放器外观装扮" title="透明度与壁纸" aria-expanded="false" aria-controls="soundwalk-appearance">🎨</button><button class="sw-icon sw-pet-settings-toggle" type="button" aria-label="宠物图标设置" title="宠物图标设置" aria-expanded="false" aria-controls="soundwalk-pet-settings">🐾</button>
         <button class="sw-icon sw-close" type="button" aria-label="关闭播放器">${icons.close}</button></div>
       </header>
+      <section id="soundwalk-appearance" class="sw-appearance" aria-label="播放器外观装扮" hidden>
+        <div class="sw-appearance-title"><strong>🎨 透明玻璃与自定义壁纸</strong><span>只影响播放器背景，不改变专辑封面</span></div>
+        <div class="sw-wallpaper-actions"><button class="sw-wallpaper-select" type="button">从手机相册选择壁纸</button><button class="sw-wallpaper-reset" type="button">恢复默认背景</button></div>
+        <label class="sw-opacity-label" for="sw-panel-opacity"><span>背景不透明度</span><output class="sw-opacity-value" for="sw-panel-opacity">100%</output></label>
+        <input id="sw-panel-opacity" class="sw-panel-opacity" type="range" min="0" max="100" step="5" value="100" aria-label="播放器背景不透明度" />
+        <p class="sw-appearance-hint">0% 最透明、100% 最实。壁纸也会随透明度淡入淡出；文字和按钮保持清楚。</p>
+      </section>
       <section id="soundwalk-pet-settings" class="sw-pet-settings" aria-label="宠物图标设置" hidden>
         <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是软乎乎黑猫 · 展开是萌萌小狗 · 贴纸头像无方形底框</span></div>
         <div class="sw-pet-choices" role="group" aria-label="打开时的小狗图标">
@@ -260,11 +302,12 @@ function init() {
         <label>音频直链<input class="sw-url" type="url" placeholder="https://example.com/song.mp3"/></label>
         <div class="sw-form-actions"><button type="button" class="sw-cancel">取消</button><button type="button" class="sw-save">保存歌曲</button></div>
       </div>
-      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐封面）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
+      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
       <input class="sw-backup-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+      <input class="sw-wallpaper-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <p class="sw-notice" role="status" aria-live="polite"></p>
     </dialog>
     <dialog class="sw-cover-spotlight" aria-label="专辑封面欣赏">
@@ -285,9 +328,84 @@ function init() {
   const backupInput = $('.sw-backup-input');
   const spotlight = $('.sw-cover-spotlight');
   const coverInput = $('.sw-cover-input');
+  const wallpaperInput = $('.sw-wallpaper-input');
   const roleFilterSelect = $('.sw-role-filter');
   const roleManager = $('.sw-role-manager');
   const roleManagerItems = $('.sw-role-bind-items');
+  // Wallpaper Blob reuses the existing IndexedDB artwork store under a
+  // reserved key. The tracks/covers schemas and saved songs remain untouched.
+  const appearanceBox=$('.sw-appearance');
+  const appearanceToggle=$('.sw-appearance-toggle');
+  const opacitySlider=$('.sw-panel-opacity');
+  function applyAppearance() {
+    panel.style.setProperty('--sw-panel-alpha', String(panelOpacity/100));
+    panel.style.setProperty('--sw-wallpaper-image', wallpaperUrl ? `url("${wallpaperUrl}")` : 'none');
+    panel.classList.toggle('sw-wallpaper-on',Boolean(wallpaperUrl));
+    opacitySlider.value=String(panelOpacity);
+    $('.sw-opacity-value').textContent=`${panelOpacity}%`;
+    $('.sw-wallpaper-select').disabled=wallpaperSaving;
+    $('.sw-wallpaper-reset').disabled=wallpaperSaving || (!wallpaperUrl && panelOpacity===100);
+  }
+  appearanceToggle.addEventListener('click',()=>{
+    appearanceBox.hidden=!appearanceBox.hidden;
+    appearanceToggle.setAttribute('aria-expanded',String(!appearanceBox.hidden));
+    requestAnimationFrame(positionPanelNearOrb);
+  });
+  opacitySlider.addEventListener('input',e=>{
+    panelOpacity=Math.max(0,Math.min(100,Number(e.target.value)));
+    applyAppearance();persist();
+  });
+  $('.sw-wallpaper-select').addEventListener('click',()=>{
+    wallpaperInput.value='';wallpaperInput.click();
+  });
+  wallpaperInput.addEventListener('change',async()=>{
+    const file=wallpaperInput.files?.[0];
+    wallpaperInput.value='';
+    if (!file||wallpaperSaving) return;
+    wallpaperSaving=true;applyAppearance();
+    try {
+      const blob=await makeWallpaperBlob(file);
+      await coverAction('put',WALLPAPER_KEY,blob);
+      wallpaperRevision++;
+      const old=wallpaperUrl;
+      wallpaperUrl=URL.createObjectURL(blob);
+      applyAppearance();
+      if(old) URL.revokeObjectURL(old);
+      if(!isPanelOpen()) showPanel(true);
+      notice('壁纸已保存 ✨ 现在可以调节透明度');
+    }catch(e){notice(e.message||'壁纸保存失败，可能本地空间不足');}
+    finally{wallpaperSaving=false;applyAppearance();}
+  });
+  $('.sw-wallpaper-reset').addEventListener('click',async()=>{
+    if(wallpaperSaving) return;
+    wallpaperSaving=true;applyAppearance();
+    try{
+      await coverAction('delete',WALLPAPER_KEY);
+      wallpaperRevision++;
+      const old=wallpaperUrl;
+      wallpaperUrl=null;panelOpacity=100;
+      applyAppearance();persist();
+      if(old) URL.revokeObjectURL(old);
+      notice('已恢复默认墨绿色背景');
+    }catch{notice('无法恢复默认背景，请检查存储权限');}
+    finally{wallpaperSaving=false;applyAppearance();}
+  });
+  async function loadSavedWallpaper() {
+    const rev=wallpaperRevision;
+    try{
+      const blob=await coverAction('get',WALLPAPER_KEY);
+      if(rev!==wallpaperRevision) return;
+      if(blob instanceof Blob) {
+        const old=wallpaperUrl;
+        wallpaperUrl=URL.createObjectURL(blob);
+        if(old) URL.revokeObjectURL(old);
+      }
+      applyAppearance();
+    }catch{/* Keep default background when storage unavailable. */}
+  }
+  applyAppearance();
+  void loadSavedWallpaper();
+
   // Compact brand mascot (independent from the floating cat/dog button).
   const brandButton = $('.sw-brand-switch');
   const brandImage = $('.sw-brand-image');
@@ -398,7 +516,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, brandIcon}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, brandIcon, panelOpacity}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -1065,9 +1183,14 @@ function init() {
           parts.push(cover);
         }
       }
-      const meta = {format:'soundwalk-complete',version:1,createdAt:new Date().toISOString(),
+      const wallpaper = await coverAction('get',WALLPAPER_KEY);
+      if(wallpaper instanceof Blob) {
+        entries.push({id:WALLPAPER_KEY,kind:'wallpaper',size:wallpaper.size,type:wallpaper.type});
+        parts.push(wallpaper);
+      }
+      const meta = {format:'soundwalk-complete',version:2,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
-          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition},entries};
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition,panelOpacity},entries};
       const payload = new TextEncoder().encode(JSON.stringify(meta));
       if (payload.length >= 999999999999) throw new Error('备份元数据超出限制');
       const prefix = 'SWBK1\n'+String(payload.length).padStart(12,'0');
@@ -1077,7 +1200,7 @@ function init() {
       a.href = url; a.download = '听风完整备份-'+new Date().toISOString().slice(0,10)+'.swbackup';
       document.body.append(a);a.click();a.remove();
       setTimeout(() => URL.revokeObjectURL(url),120000);
-      notice('完整备份已生成：包含歌曲、封面、绑定和播放顺序');
+      notice('完整备份已生成：包含歌曲、封面、壁纸与角色顺序');
     } catch(e) {notice(e.message || '完整备份失败');}
     finally {$('.sw-backup-export').disabled = false;}
   }
@@ -1088,10 +1211,10 @@ function init() {
     const length = Number(header.slice(6));
     if (!Number.isSafeInteger(length) || length < 2 || length > 5000000) throw new Error('备份信息大小异常');
     const meta = JSON.parse(new TextDecoder().decode(await file.slice(18,18+length).arrayBuffer()));
-    if (meta.format !== 'soundwalk-complete' || meta.version !== 1 ||
+    if (meta.format !== 'soundwalk-complete' || ![1,2].includes(meta.version) ||
         !Array.isArray(meta.settings?.tracks) || !Array.isArray(meta.entries)) throw new Error('备份格式不受支持');
     const inputTracks = meta.settings.tracks;
-    if (inputTracks.length > MAX_TRACKS || meta.entries.length > MAX_TRACKS*2) throw new Error('备份歌曲数量超出限制');
+    if (inputTracks.length > MAX_TRACKS || meta.entries.length > MAX_TRACKS*2+1) throw new Error('备份歌曲数量超出限制');
     const tracks = inputTracks.map(validateTrack);
     if (tracks.some(t=>!t) || new Set(tracks.map(t=>t.id)).size !== tracks.length) throw new Error('备份歌曲信息无效');
     const byId = new Map(tracks.map(t=>[t.id,t]));
@@ -1100,9 +1223,13 @@ function init() {
     for (const entry of meta.entries) {
       const {id,kind,size} = entry || {};
       const mark = kind+':'+id;
-      if (!byId.has(id) || !['audio','cover'].includes(kind) || keys.has(mark) ||
-          !Number.isSafeInteger(size) || size < 0 ||
-          size > (kind === 'audio' ? MAX_FILE_SIZE : 12000000) || offset+size > file.size) {
+      const valid = kind==='wallpaper'
+        ? (meta.version===2 && id===WALLPAPER_KEY)
+        : (byId.has(id) && ['audio','cover'].includes(kind));
+      if (!valid || keys.has(mark) ||
+          !Number.isSafeInteger(size) || size<0 ||
+          size>(kind==='audio' ? MAX_FILE_SIZE : kind==='wallpaper' ? WALLPAPER_MAX_BYTES : COVER_MAX_BYTES) ||
+          offset+size>file.size) {
         throw new Error('备份里的音频或封面数据不完整');
       }
       keys.add(mark);
@@ -1133,6 +1260,8 @@ function init() {
       manualFilter = typeof meta.settings.manualFilter === 'string' ? meta.settings.manualFilter : 'all';
       openPet = meta.settings.openPet === 'shepherd' ? 'shepherd' : 'golden';
       brandIcon = meta.settings.brandIcon === 'paw' ? 'paw' : 'cat';
+      panelOpacity = Number.isFinite(meta.settings.panelOpacity) ? Math.max(0,Math.min(100,Math.round(meta.settings.panelOpacity))) : 100;
+      if (!keys.has('wallpaper:'+WALLPAPER_KEY)) await coverAction('delete',WALLPAPER_KEY);
       if (meta.settings.orbPosition && Number.isFinite(meta.settings.orbPosition.x) && Number.isFinite(meta.settings.orbPosition.y)) {
         orbPosition = {x:Math.max(0,Math.min(1,meta.settings.orbPosition.x)),y:Math.max(0,Math.min(1,meta.settings.orbPosition.y))};
         positionOrb();
@@ -1148,10 +1277,15 @@ function init() {
       // Keep the page quiet after restore; allow the next character change to auto-start.
       currentIndex = -1;lastRoleSignature = '';
       searchQuery = '';$('.sw-search').value = '';
+      wallpaperRevision++;
+      if(wallpaperUrl){URL.revokeObjectURL(wallpaperUrl);wallpaperUrl=null;}
+      const wallpaperPiece=pieces.find(p=>p.kind==='wallpaper');
+      if(wallpaperPiece) wallpaperUrl=URL.createObjectURL(wallpaperPiece.blob);
+      applyAppearance();
       updateBrandIcon();syncPetChoices();syncPanelState();
       await selectTrack(-1,false);
       renderTransport();refreshFilter();persist();
-      notice(`恢复完成：${tracks.length} 首歌曲及其封面已找回`);
+      notice(`恢复完成：${tracks.length} 首歌曲、封面和外观设置已找回`);
     } finally {$('.sw-backup-import').disabled = false;}
   }
   $('.sw-backup-export').addEventListener('click',()=>void exportFullBackup());
