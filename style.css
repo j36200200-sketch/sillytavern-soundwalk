@@ -34,12 +34,12 @@
 #soundwalk-player-root .sw-orb-pulse { position: absolute; width: 6px; height: 6px; top: 7px; right: 7px; border-radius: 50%; background: #fe9b72; opacity: 0; }
 #soundwalk-player-root .sw-orb.sw-active .sw-orb-pulse { opacity: 1; animation: sw-beat 1.6s ease-in-out infinite; }
 @keyframes sw-beat { 50% { transform: scale(1.5); opacity: .45; } }
-/* Dialog is promoted into the browser top layer, above SillyTavern themes. */
+/* The dialog renders in the browser top layer, not beneath SillyTavern skins. */
 #soundwalk-player-root dialog.sw-panel {
   position: fixed !important; inset: 8px auto auto 8px !important;
   margin: 0 !important; padding: 0 !important;
   width: min(365px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 30px));
-  display: flex !important; flex-direction: column !important; overflow: hidden !important;
+  display: flex !important; flex-direction: column !important; overflow-y: auto !important; overflow-x: hidden !important;
   color: var(--sw-cream); background: linear-gradient(152deg, #24414d 0%, #15252f 45%, #11212b 100%) !important;
   border: 1px solid var(--sw-edge); border-radius: 20px;
   box-shadow: 0 24px 80px #040f16bf, inset 0 1px 0 #ffffff12;
@@ -87,6 +87,25 @@
 #soundwalk-player-root .sw-tools { display:flex; gap:5px; }
 #soundwalk-player-root .sw-text-button { color:#d5efe2; background:#ffffff16; padding:5px 9px; font-size:12px; border-radius:8px; }
 #soundwalk-player-root .sw-text-button:hover { background:#ffffff26; }
+
+/* Optional per-character grouping, with the full library always accessible. */
+#soundwalk-player-root .sw-roles { padding:5px 16px 9px; border-bottom:1px solid #ffffff16; display:grid; gap:7px; color:var(--sw-muted); }
+#soundwalk-player-root .sw-role-line, #soundwalk-player-root .sw-role-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+#soundwalk-player-root .sw-role-current {font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+#soundwalk-player-root .sw-role-toggle {display:flex; align-items:center; gap:4px; font-size:11px; white-space:nowrap; color:var(--sw-cream); }
+#soundwalk-player-root .sw-role-toggle input, #soundwalk-player-root .sw-role-bind-row input {accent-color:var(--sw-mint);}
+#soundwalk-player-root .sw-role-tools label {display:flex; align-items:center; gap:7px; font-size:11px; min-width:0; }
+#soundwalk-player-root .sw-role-filter {width:125px; max-width:42vw; min-width:0; border:1px solid #ffffff32; border-radius:8px; padding:5px; color:var(--sw-cream); background:var(--sw-bg2); font-size:11px; }
+#soundwalk-player-root .sw-role-filter:disabled {opacity:.6;}
+#soundwalk-player-root .sw-role-manager {display:block; background:#ffffff0a; border:1px solid #ffffff16; padding:7px; border-radius:10px;}
+#soundwalk-player-root .sw-role-manager[hidden] {display:none!important;}
+#soundwalk-player-root .sw-role-hint {font-size:10px; margin:0 0 7px; line-height:1.5; }
+#soundwalk-player-root .sw-role-bind-items {display:grid; max-height:116px; overflow-y:auto; gap:4px;}
+#soundwalk-player-root .sw-role-bind-row {display:flex; align-items:center; gap:7px; padding:3px 5px; border-radius:6px; background:#ffffff0d; min-width:0; font-size:11px; }
+#soundwalk-player-root .sw-role-bind-row span {overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+#soundwalk-player-root .sw-role-bind-items>p {font-size:11px; margin:4px;}
+#soundwalk-player-root .sw-track-action.sw-bound {color:#ffbd9f;}
+
 #soundwalk-player-root .sw-list { margin:0 13px 0; padding:0; list-style:none; overflow-y:auto; min-height:48px; max-height:190px; flex:1; scrollbar-width:thin; scrollbar-color:#68858144 transparent; }
 #soundwalk-player-root .sw-track { display:flex; gap:3px; justify-content:space-between; align-items:center; border-radius:10px; margin:3px 0; background:#ffffff0a; }
 #soundwalk-player-root .sw-track.sw-current { background:#92dcc21b; box-shadow:inset 3px 0 0 var(--sw-mint); }
