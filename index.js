@@ -68,8 +68,14 @@ function validateTrack(raw) {
   }
   return { id: cleanText(raw.id, 100) || uid(), title, artist, kind, bindings };
 }
+function normalizeRoleOrders(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw).filter(([key,value]) =>
+    key.startsWith('avatar:') && key.length <= 310 && Array.isArray(value)).slice(0,300)
+    .map(([key,ids]) => [key,[...new Set(ids.filter(id => typeof id === 'string' && id.length <= 150))].slice(0,MAX_TRACKS)]));
+}
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, openPet: 'golden', brandIcon: 'cat' };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', brandIcon: 'cat' };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -86,6 +92,7 @@ function readSettings() {
       volume: Number.isFinite(data.volume) ? Math.max(0, Math.min(1, data.volume)) : 0.72,
       followCharacter: data.followCharacter === true,
       autoRolePlayback: data.autoRolePlayback === true,
+      roleOrders: normalizeRoleOrders(data.roleOrders),
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
       brandIcon: data.brandIcon === 'paw' ? 'paw' : 'cat',
       manualFilter: typeof data.manualFilter === 'string' && data.manualFilter.length <= 320 ? data.manualFilter : 'all',
@@ -185,6 +192,7 @@ function init() {
   let openPet = settings.openPet;
   let brandIcon = settings.brandIcon;
   let manualFilter = settings.manualFilter;
+  let searchQuery = '';
   let currentCharacter = null;
   let lastRoleSignature = '';
   let manageBindingsOpen = false;
@@ -220,7 +228,7 @@ function init() {
         </div>
       </section>
       <div class="sw-now">
-        <div class="sw-scene" aria-hidden="true"><span class="sw-sun"></span><span class="sw-hill sw-hill-a"></span><span class="sw-hill sw-hill-b"></span><span class="sw-stars">✧</span><img class="sw-now-cover" alt="" hidden /></div>
+        <button class="sw-scene" type="button" aria-label="放大专辑封面" title="点击放大专辑封面"><span class="sw-sun"></span><span class="sw-hill sw-hill-a"></span><span class="sw-hill sw-hill-b"></span><span class="sw-stars">✧</span><img class="sw-now-cover" alt="" hidden /></button>
         <div class="sw-now-title"><strong class="sw-title">歌单还是空的</strong><span class="sw-artist">添加链接或本地音频开始播放</span><div class="sw-cover-controls"><button class="sw-cover-change" type="button">选择封面</button><button class="sw-cover-reset" type="button">恢复默认</button></div></div>
       </div>
       <div class="sw-progress-area">
@@ -236,12 +244,15 @@ function init() {
       </div>
       <div class="sw-volume-row"><span>音量</span><input class="sw-volume" aria-label="音量" type="range" min="0" max="100" value="72"/><label for="sw-sleep-select">定时停止</label><select id="sw-sleep-select" class="sw-sleep" aria-label="定时停止"><option value="0">关闭</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option></select></div>
       <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button></div></div>
+      <div class="sw-search-row"><input class="sw-search" type="search" placeholder="搜索歌名 / 歌手" aria-label="搜索歌曲" maxlength="100" /><button class="sw-search-clear" type="button" aria-label="清除搜索" title="清除搜索">×</button></div>
+      <details class="sw-advanced"><summary>⚙ 角色绑定与歌单设置</summary>
       <section class="sw-roles" aria-label="角色歌单设置">
         <div class="sw-role-line"><span class="sw-role-current">当前角色：识别中</span><label class="sw-role-toggle"><input class="sw-role-follow" type="checkbox" /> 随角色切换歌单</label></div>
         <div class="sw-role-auto-line"><label class="sw-role-auto-label"><input class="sw-role-autoplay" type="checkbox" /><span>进入角色自动播放</span></label><span class="sw-role-auto-hint">已绑定角色从第一首顺序播放 · 未绑定保持静音</span></div>
         <div class="sw-role-tools"><label>歌单分组 <select class="sw-role-filter" aria-label="选择歌单分组"><option value="all">全部歌曲</option></select></label><button class="sw-text-button sw-role-manage" type="button" aria-expanded="false">管理角色绑定</button></div>
         <div class="sw-role-manager" hidden><p class="sw-role-hint">勾选歌曲，绑定到当前角色；取消勾选即解除绑定。一首歌可以绑定多个角色。</p><div class="sw-role-bind-items"></div></div>
       </section>
+      </details>
       <ol class="sw-list" aria-label="播放列表"></ol>
       <div class="sw-form" hidden>
         <label>歌名<input class="sw-name" type="text" maxlength="90" placeholder="例如：夜航"/></label>
@@ -249,11 +260,17 @@ function init() {
         <label>音频直链<input class="sw-url" type="url" placeholder="https://example.com/song.mp3"/></label>
         <div class="sw-form-actions"><button type="button" class="sw-cancel">取消</button><button type="button" class="sw-save">保存歌曲</button></div>
       </div>
-      <footer class="sw-footer"><div class="sw-file-tools"><button class="sw-export" type="button">导出歌单</button><button class="sw-import" type="button">导入歌单</button></div><span>仅本机保存 · 无内置曲库</span></footer>
+      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐封面）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
+      <input class="sw-backup-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <p class="sw-notice" role="status" aria-live="polite"></p>
+    </dialog>
+    <dialog class="sw-cover-spotlight" aria-label="专辑封面欣赏">
+      <button class="sw-spotlight-close" type="button" aria-label="关闭大封面">×</button>
+      <div class="sw-spotlight-art"><img class="sw-spotlight-image" alt="大尺寸专辑封面" hidden /><div class="sw-spotlight-empty" hidden><span>♫</span><p>这首歌还没有专属封面</p><button type="button" class="sw-spotlight-choose">挑选一张图片</button></div></div>
+      <div class="sw-spotlight-meta"><strong class="sw-spotlight-title"></strong><span class="sw-spotlight-artist"></span></div>
     </dialog>`;
   document.body.append(root);
   const $ = selector => root.querySelector(selector);
@@ -265,6 +282,8 @@ function init() {
   const playButton = $('.sw-main-play');
   const fileInput = $('.sw-file-input');
   const jsonInput = $('.sw-json-input');
+  const backupInput = $('.sw-backup-input');
+  const spotlight = $('.sw-cover-spotlight');
   const coverInput = $('.sw-cover-input');
   const roleFilterSelect = $('.sw-role-filter');
   const roleManager = $('.sw-role-manager');
@@ -379,7 +398,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, openPet, brandIcon}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, brandIcon}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -518,11 +537,34 @@ function init() {
   }
   function visibleIndices() {
     const key = roleFilterKey();
-    return settings.tracks.flatMap((track,index) => {
+    const indices = settings.tracks.flatMap((track,index) => {
       const bindings = track.bindings || [];
       const visible = key === 'all' || (key === 'unassigned' ? !bindings.length : bindings.includes(key));
       return visible ? [index] : [];
     });
+    const order = key.startsWith('avatar:') ? settings.roleOrders[key] : null;
+    if (!order?.length) return indices;
+    const positions = new Map(order.map((id,i) => [id,i]));
+    return indices.sort((a,b) => (positions.get(settings.tracks[a].id) ?? 999999) -
+      (positions.get(settings.tracks[b].id) ?? 999999));
+  }
+  function moveTrackInList(id, direction) {
+    const visible = visibleIndices();
+    const position = visible.findIndex(i => settings.tracks[i].id === id);
+    const destination = position + direction;
+    if (position < 0 || destination < 0 || destination >= visible.length) return;
+    const roleKey = roleFilterKey();
+    if (roleKey.startsWith('avatar:')) {
+      const reordered = visible.map(i => settings.tracks[i].id);
+      [reordered[position],reordered[destination]] = [reordered[destination],reordered[position]];
+      settings.roleOrders[roleKey] = reordered;
+    } else {
+      const activeId = settings.tracks[currentIndex]?.id;
+      const a = visible[position], b = visible[destination];
+      [settings.tracks[a],settings.tracks[b]] = [settings.tracks[b],settings.tracks[a]];
+      currentIndex = settings.tracks.findIndex(t => t.id === activeId);
+    }
+    renderList();persist();
   }
   function updateRoleView() {
     const status = $('.sw-role-current');
@@ -634,6 +676,32 @@ function init() {
   function selectedTrack() {
     return visibleIndices().includes(currentIndex) ? settings.tracks[currentIndex] : null;
   }
+  function refreshSpotlight() {
+    if (!spotlight.open) return;
+    const track = selectedTrack();
+    if (!track) {spotlight.close();return;}
+    $('.sw-spotlight-title').textContent = track.title;
+    $('.sw-spotlight-artist').textContent = track.artist;
+    const url = coverUrls.get(track.id);
+    const image = $('.sw-spotlight-image');
+    image.hidden = !url;
+    if (url) image.src = url;
+    else image.removeAttribute('src');
+    $('.sw-spotlight-empty').hidden = !!url;
+  }
+  $('.sw-scene').addEventListener('click', () => {
+    if (!selectedTrack()) return notice('请先选择一首歌曲');
+    if (typeof spotlight.showModal === 'function' && !spotlight.open) spotlight.showModal();
+    else if (!spotlight.open) spotlight.show();
+    refreshSpotlight();
+  });
+  $('.sw-spotlight-close').addEventListener('click', () => spotlight.close());
+  $('.sw-spotlight-choose').addEventListener('click', () => {
+    const id = selectedTrack()?.id;
+    spotlight.close();
+    if (id) chooseCover(id);
+  });
+  spotlight.addEventListener('click', e => {if (e.target === spotlight) spotlight.close();});
   function showTrackCover(id) {
     const coverUrl = id ? coverUrls.get(id) : null;
     const now = selectedTrack();
@@ -646,6 +714,7 @@ function init() {
       $('.sw-cover-reset').disabled = !visibleUrl;
       $('.sw-cover-change').disabled = !now;
     }
+    if (spotlight.open) refreshSpotlight();
     root.querySelectorAll('.sw-track-cover').forEach(button => {
       if (button.dataset.coverId !== id) return;
       const img = button.querySelector('img');
@@ -741,6 +810,7 @@ function init() {
     $('.sw-count').textContent = `${visible.length}/${settings.tracks.length}`;
     showTrackCover(track?.id || null);
     if (track) getSavedCover(track.id);
+    if (spotlight.open) refreshSpotlight();
   }
   function actionBtn(label, title, handler) {
     const btn = document.createElement('button');
@@ -754,9 +824,16 @@ function init() {
   }
   function renderList() {
     list.replaceChildren();
+    const search = searchQuery.trim().toLocaleLowerCase();
+    const allVisible = visibleIndices();
+    const matched = search ? allVisible.filter(index => {
+      const track = settings.tracks[index];
+      return (track.title + ' ' + track.artist).toLocaleLowerCase().includes(search);
+    }) : allVisible;
+    $('.sw-search-clear').hidden = !searchQuery;
     // Load the now-playing artwork ahead of any offscreen song thumbnails.
     getSavedCover(selectedTrack()?.id);
-    visibleIndices().forEach(index => {
+    matched.forEach(index => {
       const track = settings.tracks[index];
       const item = document.createElement('li');
       item.className = 'sw-track';
@@ -798,23 +875,28 @@ function init() {
       if (track.kind === 'url') {
         actions.append(actionBtn('✎', `编辑 ${track.title}`, () => editTrack(track.id)));
       }
+      actions.append(actionBtn('↑', `上移 ${track.title}`, () => moveTrackInList(track.id, -1)));
+      actions.append(actionBtn('↓', `下移 ${track.title}`, () => moveTrackInList(track.id, 1)));
       actions.append(actionBtn('×', `删除 ${track.title}`, () => deleteTrack(track.id)));
       item.append(coverBtn, select, actions);
       list.append(item);
       showTrackCover(track.id);
       getSavedCover(track.id);
     });
-    if (!visibleIndices().length) {
+    if (!matched.length) {
       const empty = document.createElement('li');
       empty.className = 'sw-empty';
-      empty.textContent = !settings.tracks.length
-        ? '还没有歌曲。你可以添加合法音频直链，也可以选择手机上的音频文件。'
-        : '这个分组还没有歌曲。关闭「随角色切换」查看全部，再点击♡绑定，或使用「管理角色绑定」批量勾选。';
+      empty.textContent = search ? '没找到匹配的歌曲，试试别的关键词' : !settings.tracks.length
+        ? '还没有歌曲。你可以添加音频直链或手机上的音频文件。'
+        : '这个分组还没有歌曲。展开「角色绑定与歌单设置」添加绑定。';
       list.append(empty);
     }
     renderNow();
+    if (search) $('.sw-count').textContent = `${matched.length}/${allVisible.length} · 总${settings.tracks.length}`;
     updateRoleView();
   }
+  $('.sw-search').addEventListener('input', e => {searchQuery = e.target.value; renderList();});
+  $('.sw-search-clear').addEventListener('click', () => {$('.sw-search').value = '';searchQuery = '';renderList();$('.sw-search').focus();});
   function resetProgress() {
     seek.value = '0';
     $('.sw-elapsed').textContent = '0:00';
@@ -898,6 +980,8 @@ function init() {
   async function deleteTrack(id) {
     const index = settings.tracks.findIndex(track => track.id === id);
     if (index < 0) return;
+    const target = settings.tracks[index];
+    if (!window.confirm(`确定删除「${target.title}」吗？\n本地音乐和封面也会从此浏览器删除。建议先做完整备份。`)) return;
     const [removed] = settings.tracks.splice(index, 1);
     if (removed.kind === 'file') {
       try { await fileAction('delete', removed.id); }
@@ -960,9 +1044,126 @@ function init() {
     refreshFilter();
     if (added) notice(`已导入 ${added} 首本地音频`);
   });
+  // Lossless custom binary bundle: short UTF-8 header, metadata JSON and raw
+  // blobs. Unlike JSON+base64, large imported audio is not expanded by 33%.
+  async function exportFullBackup() {
+    if (!window.confirm('完整备份包含音频和封面，文件可能较大。确认生成并保存到本机？')) return;
+    $('.sw-backup-export').disabled = true;
+    try {
+      notice('正在整理完整备份，请稍候…');
+      const entries = [], parts = [];
+      for (const track of settings.tracks) {
+        if (track.kind === 'file') {
+          const audioBlob = await fileAction('get', track.id);
+          if (!(audioBlob instanceof Blob)) throw new Error(`缺少「${track.title}」的音频文件，请检查后重新备份`);
+          entries.push({id:track.id,kind:'audio',size:audioBlob.size,type:audioBlob.type});
+          parts.push(audioBlob);
+        }
+        const cover = await coverAction('get',track.id);
+        if (cover instanceof Blob) {
+          entries.push({id:track.id,kind:'cover',size:cover.size,type:cover.type});
+          parts.push(cover);
+        }
+      }
+      const meta = {format:'soundwalk-complete',version:1,createdAt:new Date().toISOString(),
+        settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition},entries};
+      const payload = new TextEncoder().encode(JSON.stringify(meta));
+      if (payload.length >= 999999999999) throw new Error('备份元数据超出限制');
+      const prefix = 'SWBK1\n'+String(payload.length).padStart(12,'0');
+      const archive = new Blob([prefix,payload,...parts], {type:'application/octet-stream'});
+      const url = URL.createObjectURL(archive);
+      const a = document.createElement('a');
+      a.href = url; a.download = '听风完整备份-'+new Date().toISOString().slice(0,10)+'.swbackup';
+      document.body.append(a);a.click();a.remove();
+      setTimeout(() => URL.revokeObjectURL(url),120000);
+      notice('完整备份已生成：包含歌曲、封面、绑定和播放顺序');
+    } catch(e) {notice(e.message || '完整备份失败');}
+    finally {$('.sw-backup-export').disabled = false;}
+  }
+  async function importFullBackup(file) {
+    if (!file) return;
+    const header = new TextDecoder().decode(await file.slice(0,18).arrayBuffer());
+    if (!/^SWBK1\n[0-9]{12}$/.test(header)) throw new Error('不是听风完整备份文件');
+    const length = Number(header.slice(6));
+    if (!Number.isSafeInteger(length) || length < 2 || length > 5000000) throw new Error('备份信息大小异常');
+    const meta = JSON.parse(new TextDecoder().decode(await file.slice(18,18+length).arrayBuffer()));
+    if (meta.format !== 'soundwalk-complete' || meta.version !== 1 ||
+        !Array.isArray(meta.settings?.tracks) || !Array.isArray(meta.entries)) throw new Error('备份格式不受支持');
+    const inputTracks = meta.settings.tracks;
+    if (inputTracks.length > MAX_TRACKS || meta.entries.length > MAX_TRACKS*2) throw new Error('备份歌曲数量超出限制');
+    const tracks = inputTracks.map(validateTrack);
+    if (tracks.some(t=>!t) || new Set(tracks.map(t=>t.id)).size !== tracks.length) throw new Error('备份歌曲信息无效');
+    const byId = new Map(tracks.map(t=>[t.id,t]));
+    const pieces = [], keys = new Set();
+    let offset = 18 + length;
+    for (const entry of meta.entries) {
+      const {id,kind,size} = entry || {};
+      const mark = kind+':'+id;
+      if (!byId.has(id) || !['audio','cover'].includes(kind) || keys.has(mark) ||
+          !Number.isSafeInteger(size) || size < 0 ||
+          size > (kind === 'audio' ? MAX_FILE_SIZE : 12000000) || offset+size > file.size) {
+        throw new Error('备份里的音频或封面数据不完整');
+      }
+      keys.add(mark);
+      pieces.push({id,kind,blob:file.slice(offset,offset+size,entry.type || 'application/octet-stream')});
+      offset += size;
+    }
+    if (offset !== file.size || tracks.some(t=>t.kind==='file' && !keys.has('audio:'+t.id))) throw new Error('备份文件有缺失或多余的数据');
+    if (!window.confirm(`恢复 ${tracks.length} 首歌曲？\n此操作将替换听风现有的播放列表、绑定和设置。请先备份当前歌单。`)) return;
+    $('.sw-backup-import').disabled = true;
+    try {
+      notice('正在恢复完整备份，期间请不要关闭页面…');
+      for (const piece of pieces) {
+        if (piece.kind === 'audio') await fileAction('put',piece.id,piece.blob);
+        else await coverAction('put',piece.id,piece.blob);
+      }
+      // Only after all required audio data is saved do we replace the visible playlist.
+      audio.pause();
+      const oldTracks = settings.tracks;
+      settings.tracks = tracks;
+      settings.roleOrders = normalizeRoleOrders(meta.settings.roleOrders);
+      settings.characterLabels = Object.fromEntries(Object.entries(meta.settings.characterLabels || {})
+        .filter(([k,v])=>k.startsWith('avatar:') && k.length <= 310 && typeof v==='string')
+        .slice(0,300).map(([k,v])=>[k,cleanText(v,70)]));
+      mode = ['all','one','shuffle'].includes(meta.settings.mode)?meta.settings.mode:'all';
+      audio.volume = Number.isFinite(meta.settings.volume) ? Math.max(0,Math.min(1,meta.settings.volume)) : .72;
+      followCharacter = meta.settings.followCharacter === true;
+      autoRolePlayback = meta.settings.autoRolePlayback === true;
+      manualFilter = typeof meta.settings.manualFilter === 'string' ? meta.settings.manualFilter : 'all';
+      openPet = meta.settings.openPet === 'shepherd' ? 'shepherd' : 'golden';
+      brandIcon = meta.settings.brandIcon === 'paw' ? 'paw' : 'cat';
+      if (meta.settings.orbPosition && Number.isFinite(meta.settings.orbPosition.x) && Number.isFinite(meta.settings.orbPosition.y)) {
+        orbPosition = {x:Math.max(0,Math.min(1,meta.settings.orbPosition.x)),y:Math.max(0,Math.min(1,meta.settings.orbPosition.y))};
+        positionOrb();
+      }
+      for (const key of coverUrls.values()) if (key) URL.revokeObjectURL(key);
+      coverUrls.clear();coverPending.clear();coverQueue.length=0;
+      for (const t of oldTracks) {
+        if (!byId.has(t.id)) {
+          if (t.kind === 'file') await fileAction('delete',t.id).catch(()=>{});
+          await coverAction('delete',t.id).catch(()=>{});
+        } else if (!keys.has('cover:'+t.id)) await coverAction('delete',t.id).catch(()=>{});
+      }
+      // Keep the page quiet after restore; allow the next character change to auto-start.
+      currentIndex = -1;lastRoleSignature = '';
+      searchQuery = '';$('.sw-search').value = '';
+      updateBrandIcon();syncPetChoices();syncPanelState();
+      await selectTrack(-1,false);
+      renderTransport();refreshFilter();persist();
+      notice(`恢复完成：${tracks.length} 首歌曲及其封面已找回`);
+    } finally {$('.sw-backup-import').disabled = false;}
+  }
+  $('.sw-backup-export').addEventListener('click',()=>void exportFullBackup());
+  $('.sw-backup-import').addEventListener('click',()=>backupInput.click());
+  backupInput.addEventListener('change',async()=>{
+    const file = backupInput.files?.[0];backupInput.value='';
+    if (!file) return;
+    try {await importFullBackup(file);} catch(e) {notice(e.message || '恢复备份失败，请检查文件');}
+  });
   $('.sw-export').addEventListener('click', () => {
     const tracks = settings.tracks.filter(item => item.kind === 'url').map(({title, artist, src, bindings}) => ({title, artist, src, bindings}));
-    const data = {format:'soundwalk-playlist', version:2, characterLabels:settings.characterLabels, tracks};
+    const data = {format:'soundwalk-playlist', version:2, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, tracks};
     const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -981,6 +1182,7 @@ function init() {
       if (data?.format !== 'soundwalk-playlist' || !Array.isArray(data?.tracks)) {
         throw new Error('不是听风歌单 JSON 文件');
       }
+      if (data.version === 2 && data.roleOrders) settings.roleOrders = normalizeRoleOrders(data.roleOrders);
       if (data.version === 2 && data.characterLabels && typeof data.characterLabels === 'object') {
         for(const [key,name] of Object.entries(data.characterLabels).slice(0,300)) {
           if (key.startsWith('avatar:') && key.length<=310 && typeof name === 'string') settings.characterLabels[key] = cleanText(name,70);

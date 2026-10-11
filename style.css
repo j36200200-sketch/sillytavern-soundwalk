@@ -254,3 +254,37 @@
 #soundwalk-player-root .sw-role-autoplay {accent-color:var(--sw-mint); width:16px; height:16px; margin:0; cursor:pointer;}
 #soundwalk-player-root .sw-role-auto-hint {font-size:10px; line-height:1.4; color:var(--sw-muted);}
 #soundwalk-player-root .sw-role-follow:disabled {opacity:.5;}
+
+/* v1.3.0 - compact mobile search, hidden-not-removed advanced controls. */
+#soundwalk-player-root .sw-search-row {display:flex; gap:6px; align-items:center; padding:4px 15px 9px;}
+#soundwalk-player-root .sw-search {flex:1;min-width:0;padding:9px 11px;border-radius:10px;border:1px solid #ffffff2c;background:#0c1e29aa;color:var(--sw-cream);font-size:13px;outline-offset:2px;}
+#soundwalk-player-root .sw-search:focus {border-color:var(--sw-mint);}
+#soundwalk-player-root .sw-search-clear {flex-shrink:0;width:32px;height:32px;font-size:21px;background:#ffffff14;color:var(--sw-cream);border-radius:9px;}
+#soundwalk-player-root .sw-search-clear[hidden] {display:none!important;}
+#soundwalk-player-root .sw-advanced, #soundwalk-player-root .sw-storage {margin:2px 14px 6px;border:1px solid #ffffff20;background:#ffffff08;border-radius:11px;}
+#soundwalk-player-root .sw-advanced>summary, #soundwalk-player-root .sw-storage>summary {cursor:pointer;list-style:none;padding:8px 11px;color:var(--sw-muted);font-size:12px;user-select:none;}
+#soundwalk-player-root .sw-advanced>summary::-webkit-details-marker, #soundwalk-player-root .sw-storage>summary::-webkit-details-marker {display:none;}
+#soundwalk-player-root .sw-advanced>summary::after, #soundwalk-player-root .sw-storage>summary::after {content:'⌄';float:right;color:var(--sw-mint);}
+#soundwalk-player-root .sw-advanced[open]>summary::after, #soundwalk-player-root .sw-storage[open]>summary::after {content:'⌃';}
+#soundwalk-player-root .sw-advanced .sw-roles {padding:8px 10px 12px;border-bottom:0;}
+#soundwalk-player-root .sw-storage .sw-footer {display:block;padding:8px 10px 12px;}
+#soundwalk-player-root .sw-storage .sw-file-tools {display:flex;flex-wrap:wrap;gap:6px;}
+#soundwalk-player-root .sw-backup-export, #soundwalk-player-root .sw-backup-import {padding:7px 9px;border-radius:9px;background:#8fd7b91b;color:var(--sw-cream);border:1px solid #8fd7b94b;font-size:11px;}
+#soundwalk-player-root .sw-backup-export:disabled, #soundwalk-player-root .sw-backup-import:disabled {opacity:.5;}
+#soundwalk-player-root .sw-track-actions {gap:2px;}
+#soundwalk-player-root .sw-track-action {min-width:25px;padding:5px 3px;}
+#soundwalk-player-root button.sw-scene {padding:0; border:0; cursor:zoom-in; flex-shrink:0;}
+#soundwalk-player-root .sw-scene:focus-visible {outline:2px solid var(--sw-mint);outline-offset:2px;}
+#soundwalk-player-root dialog.sw-cover-spotlight {position:fixed!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;margin:0!important;box-sizing:border-box;width:min(95vw,740px);max-width:740px;max-height:94dvh;overflow:auto;border:1px solid #ffffff26;border-radius:20px;background:#12242ded;color:var(--sw-cream);padding:15px;pointer-events:auto!important;box-shadow:0 20px 80px #000a;z-index:2147483647;}
+#soundwalk-player-root dialog.sw-cover-spotlight:not([open]) {display:none!important;}
+#soundwalk-player-root .sw-cover-spotlight::backdrop {background:rgba(0,0,0,.72);backdrop-filter:blur(8px);}
+#soundwalk-player-root .sw-spotlight-close {position:absolute;top:8px;right:8px;z-index:3;background:#05131bdc;color:white;border:1px solid #ffffff44;border-radius:50%;height:36px;width:36px;font-size:25px;}
+#soundwalk-player-root .sw-spotlight-art {display:grid;place-items:center;max-height:calc(94dvh - 105px);aspect-ratio:1/1;overflow:hidden;border-radius:14px;background:linear-gradient(150deg,#294d5a,#10212c);}
+#soundwalk-player-root .sw-spotlight-image {display:block;max-width:100%;max-height:calc(94dvh - 105px);width:100%;height:100%;object-fit:contain;}
+#soundwalk-player-root .sw-spotlight-image[hidden],#soundwalk-player-root .sw-spotlight-empty[hidden] {display:none!important;}
+#soundwalk-player-root .sw-spotlight-empty {display:grid;justify-items:center;color:var(--sw-muted);font-size:15px;}
+#soundwalk-player-root .sw-spotlight-empty span {font-size:100px;color:var(--sw-mint);}
+#soundwalk-player-root .sw-spotlight-choose {padding:10px 14px;border-radius:10px;color:#103b31;background:var(--sw-mint);}
+#soundwalk-player-root .sw-spotlight-meta {display:grid;gap:3px;text-align:center;padding:12px 6px 2px;}
+#soundwalk-player-root .sw-spotlight-title {font-size:17px;}
+#soundwalk-player-root .sw-spotlight-artist {color:var(--sw-muted);font-size:12px;}
