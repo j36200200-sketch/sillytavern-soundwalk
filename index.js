@@ -35,11 +35,11 @@ const petAssets = Object.freeze({
   cat: new URL('./assets/pets/pet-cat-v123.png', import.meta.url).href,
   golden: new URL('./assets/pets/pet-golden-v123.png', import.meta.url).href,
   shepherd: new URL('./assets/pets/pet-shepherd-v123.png', import.meta.url).href,
-  owl: new URL('./assets/pets/pet-owl-v135.svg', import.meta.url).href,
-  raven: new URL('./assets/pets/pet-raven-v135.svg', import.meta.url).href,
-  snake: new URL('./assets/pets/pet-snake-v135.svg', import.meta.url).href,
-  wolf: new URL('./assets/pets/pet-wolf-v135.svg', import.meta.url).href,
-  samoyed: new URL('./assets/pets/pet-samoyed-v135.svg', import.meta.url).href,
+  owl: new URL('./assets/pets/pet-owl-v136.webp', import.meta.url).href,
+  raven: new URL('./assets/pets/pet-raven-v136.webp', import.meta.url).href,
+  snake: new URL('./assets/pets/pet-snake-v136.webp', import.meta.url).href,
+  wolf: new URL('./assets/pets/pet-wolf-v136.webp', import.meta.url).href,
+  samoyed: new URL('./assets/pets/pet-samoyed-v136.webp', import.meta.url).href,
 });
 const petIcons = {
   cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
