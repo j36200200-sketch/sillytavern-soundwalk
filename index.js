@@ -210,6 +210,34 @@ async function makeWallpaperBlob(file) {
   } finally { URL.revokeObjectURL(sourceUrl); }
 }
 
+// Backup checksums detect accidental corruption; they are not signatures.
+// Streaming CRC-32 reads small chunks, avoiding a 60MB buffer per audio file.
+const BACKUP_CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i=0;i<256;i++) {
+    let value=i;
+    for (let j=0;j<8;j++) value=(value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    table[i]=value >>> 0;
+  }
+  return table;
+})();
+function checksumBytes(bytes, initial=0xffffffff) {
+  let crc=initial;
+  for (let i=0;i<bytes.length;i++) crc=BACKUP_CRC_TABLE[(crc ^ bytes[i]) & 255] ^ (crc >>> 8);
+  return crc >>> 0;
+}
+function checksumHex(bytes) {
+  return ((checksumBytes(bytes) ^ 0xffffffff) >>> 0).toString(16).padStart(8,'0');
+}
+async function checksumBlob(blob) {
+  let crc=0xffffffff;
+  for (let offset=0;offset<blob.size;offset+=256*1024) {
+    const bytes=new Uint8Array(await blob.slice(offset,Math.min(blob.size,offset+256*1024)).arrayBuffer());
+    crc=checksumBytes(bytes,crc);
+  }
+  return ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8,'0');
+}
+
 function init() {
   if (document.getElementById(ROOT_ID)) return;
   const settings = readSettings();
@@ -310,10 +338,11 @@ function init() {
         <label>音频直链<input class="sw-url" type="url" placeholder="https://example.com/song.mp3"/></label>
         <div class="sw-form-actions"><button type="button" class="sw-cancel">取消</button><button type="button" class="sw-save">保存歌曲</button></div>
       </div>
-      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
+      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-backup-check" type="button">校验已有备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
       <input class="sw-backup-input" type="file" accept=".swbackup,application/octet-stream" hidden />
+      <input class="sw-backup-check-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <input class="sw-wallpaper-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <p class="sw-notice" role="status" aria-live="polite"></p>
@@ -334,6 +363,7 @@ function init() {
   const fileInput = $('.sw-file-input');
   const jsonInput = $('.sw-json-input');
   const backupInput = $('.sw-backup-input');
+  const backupCheckInput = $('.sw-backup-check-input');
   const spotlight = $('.sw-cover-spotlight');
   const coverInput = $('.sw-cover-input');
   const wallpaperInput = $('.sw-wallpaper-input');
@@ -1187,133 +1217,200 @@ function init() {
   });
   // Lossless custom binary bundle: short UTF-8 header, metadata JSON and raw
   // blobs. Unlike JSON+base64, large imported audio is not expanded by 33%.
+
+  // SWBK1 keeps the same 18-byte header. v3 adds CRC32 per media Blob and
+  // a CRC32 for the metadata. v1/v2 backups remain readable (structure-only).
   async function exportFullBackup() {
-    if (!window.confirm('完整备份包含音频和封面，文件可能较大。确认生成并保存到本机？')) return;
-    $('.sw-backup-export').disabled = true;
+    if (!window.confirm('完整备份包含本地音频、封面和壁纸，文件可能很大。确认生成校验版备份？')) return;
+    $('.sw-backup-export').disabled=true;
     try {
-      notice('正在整理完整备份，请稍候…');
-      const entries = [], parts = [];
-      for (const track of settings.tracks) {
-        if (track.kind === 'file') {
-          const audioBlob = await fileAction('get', track.id);
-          if (!(audioBlob instanceof Blob)) throw new Error(`缺少「${track.title}」的音频文件，请检查后重新备份`);
-          entries.push({id:track.id,kind:'audio',size:audioBlob.size,type:audioBlob.type});
-          parts.push(audioBlob);
-        }
-        const cover = await coverAction('get',track.id);
-        if (cover instanceof Blob) {
-          entries.push({id:track.id,kind:'cover',size:cover.size,type:cover.type});
-          parts.push(cover);
-        }
+      notice('正在检查本地音乐与图片，请勿关闭页面…');
+      const entries=[],parts=[];
+      let count=0;
+      async function addChecked(kind,id,blob,label,maxSize) {
+        if (!(blob instanceof Blob) || !blob.size || blob.size>maxSize)
+          throw new Error('「'+label+'」数据缺失、为空或超过大小限制，备份已取消');
+        const crc32=await checksumBlob(blob);
+        entries.push({id,kind,size:blob.size,type:blob.type,crc32});
+        parts.push(blob);
+        if (++count % 8===0) notice('备份校验中：已核对 '+count+' 个音频或图片文件…');
       }
-      const wallpaper = await coverAction('get',WALLPAPER_KEY);
-      if(wallpaper instanceof Blob) {
-        entries.push({id:WALLPAPER_KEY,kind:'wallpaper',size:wallpaper.size,type:wallpaper.type});
-        parts.push(wallpaper);
+      for(const track of settings.tracks) {
+        if(track.kind==='file') {
+          const song=await fileAction('get',track.id);
+          await addChecked('audio',track.id,song,track.title,MAX_FILE_SIZE);
+        }
+        const cover=await coverAction('get',track.id);
+        if(cover!==undefined && cover!==null)
+          await addChecked('cover',track.id,cover,track.title+' 的封面',COVER_MAX_BYTES);
       }
-      const meta = {format:'soundwalk-complete',version:2,createdAt:new Date().toISOString(),
+      const wallpaper=await coverAction('get',WALLPAPER_KEY);
+      if(wallpaper!==undefined && wallpaper!==null)
+        await addChecked('wallpaper',WALLPAPER_KEY,wallpaper,'播放器壁纸',WALLPAPER_MAX_BYTES);
+      const unsigned={format:'soundwalk-complete',version:3,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
           mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition,panelOpacity,frostBlur},entries};
-      const payload = new TextEncoder().encode(JSON.stringify(meta));
-      if (payload.length >= 999999999999) throw new Error('备份元数据超出限制');
-      const prefix = 'SWBK1\n'+String(payload.length).padStart(12,'0');
-      const archive = new Blob([prefix,payload,...parts], {type:'application/octet-stream'});
-      const url = URL.createObjectURL(archive);
-      const a = document.createElement('a');
-      a.href = url; a.download = '听风完整备份-'+new Date().toISOString().slice(0,10)+'.swbackup';
-      document.body.append(a);a.click();a.remove();
-      setTimeout(() => URL.revokeObjectURL(url),120000);
-      notice('完整备份已生成：包含歌曲、封面、壁纸与角色顺序');
-    } catch(e) {notice(e.message || '完整备份失败');}
-    finally {$('.sw-backup-export').disabled = false;}
+      const metadataCrc32=checksumHex(new TextEncoder().encode(JSON.stringify(unsigned)));
+      const meta={...unsigned,metadataCrc32};
+      const payload=new TextEncoder().encode(JSON.stringify(meta));
+      if(payload.length>5000000) throw new Error('备份信息过大，请减少歌曲数量');
+      const prefix='SWBK1\n'+String(payload.length).padStart(12,'0');
+      const archive=new Blob([prefix,payload,...parts],{type:'application/octet-stream'});
+      if(archive.size!==18+payload.length+entries.reduce((sum,e)=>sum+e.size,0))
+        throw new Error('生成备份时大小校验失败，请重试');
+      const url=URL.createObjectURL(archive);
+      const link=document.createElement('a');
+      link.href=url;link.download='听风完整备份-'+new Date().toISOString().slice(0,10)+'.swbackup';
+      document.body.append(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),120000);
+      notice('完整备份校验成功：'+settings.tracks.length+' 首歌曲、'+entries.length+' 个本地媒体文件已打包 ✓');
+    }catch(e){notice(e.message||'完整备份失败，现有歌曲未更改');}
+    finally{$('.sw-backup-export').disabled=false;}
+  }
+  async function verifyFullBackup(file) {
+    if(!(file instanceof Blob)||file.size<20) throw new Error('备份文件过小或无法读取');
+    const header=new TextDecoder().decode(await file.slice(0,18).arrayBuffer());
+    if(!/^SWBK1\n[0-9]{12}$/.test(header)) throw new Error('不是有效的听风完整备份文件');
+    const length=Number(header.slice(6));
+    if(!Number.isSafeInteger(length)||length<2||length>5000000||file.size<18+length)
+      throw new Error('备份元数据缺失或文件已截断');
+    let meta;
+    try{meta=JSON.parse(new TextDecoder().decode(await file.slice(18,18+length).arrayBuffer()));}
+    catch{throw new Error('备份信息损坏，无法解析');}
+    if(meta?.format!=='soundwalk-complete'||![1,2,3].includes(meta.version)||
+        !Array.isArray(meta.settings?.tracks)||!Array.isArray(meta.entries))
+      throw new Error('备份格式不受支持');
+    if(meta.version===3){
+      const {metadataCrc32,...unsigned}=meta;
+      if(typeof metadataCrc32!=='string'|| !/^[0-9a-f]{8}$/.test(metadataCrc32)||
+          checksumHex(new TextEncoder().encode(JSON.stringify(unsigned)))!==metadataCrc32)
+        throw new Error('备份目录校验失败：歌单或文件信息可能已损坏');
+    }
+    const rawTracks=meta.settings.tracks;
+    if(rawTracks.length>MAX_TRACKS||meta.entries.length>MAX_TRACKS*2+1)
+      throw new Error('备份文件的歌曲数量超出限制');
+    const tracks=rawTracks.map(validateTrack);
+    if(tracks.some(t=>!t)||new Set(tracks.map(t=>t.id)).size!==tracks.length)
+      throw new Error('备份歌曲资料损坏或存在重复标识');
+    const byId=new Map(tracks.map(t=>[t.id,t]));
+    const pieces=[],keys=new Set();
+    let offset=18+length;
+    for(const entry of meta.entries){
+      const {id,kind,size}=entry||{};
+      const mark=kind+':'+id;
+      const target=byId.get(id);
+      const valid=kind==='wallpaper'
+        ? (meta.version>=2&&id===WALLPAPER_KEY)
+        : (kind==='audio' ? target?.kind==='file' : kind==='cover'&&Boolean(target));
+      const max=kind==='audio'?MAX_FILE_SIZE:kind==='wallpaper'?WALLPAPER_MAX_BYTES:COVER_MAX_BYTES;
+      if(!valid||keys.has(mark)||!Number.isSafeInteger(size)||size<1||size>max||offset+size>file.size)
+        throw new Error('备份缺少音频、封面或壁纸，或媒体文件不完整');
+      if(meta.version===3&&(typeof entry.crc32!=='string'||!/^[0-9a-f]{8}$/.test(entry.crc32)))
+        throw new Error('备份缺少媒体文件校验码');
+      keys.add(mark);
+      pieces.push({id,kind,blob:file.slice(offset,offset+size,entry.type||'application/octet-stream'),crc32:entry.crc32});
+      offset+=size;
+    }
+    if(offset!==file.size||tracks.some(t=>t.kind==='file'&&!keys.has('audio:'+t.id)))
+      throw new Error('备份文件长度不一致，或部分本地音乐缺失');
+    if(meta.version===3){
+      for(let i=0;i<pieces.length;i++){
+        const piece=pieces[i];
+        if(i%8===0)notice('正在逐项验证备份 '+(i+1)+'/'+pieces.length+'…');
+        if(await checksumBlob(piece.blob)!==piece.crc32){
+          const name=byId.get(piece.id)?.title||'播放器壁纸';
+          throw new Error('「'+name+'」校验失败：文件内容有损坏，已停止恢复');
+        }
+      }
+    }
+    return {meta,tracks,pieces,keys,verified:meta.version===3};
+  }
+  // The two media stores are updated in ONE IndexedDB transaction. If quota
+  // or write errors occur, the browser rolls back the whole media restore.
+  async function commitBackupMedia(pieces,tracks,oldTracks,keys){
+    const db=await openAudioDb();
+    try{
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction([DB_STORE,COVER_STORE],'readwrite');
+        const songs=tx.objectStore(DB_STORE),art=tx.objectStore(COVER_STORE);
+        tx.oncomplete=()=>resolve();
+        tx.onabort=()=>reject(tx.error||new Error('存储空间不足，恢复已回滚，请检查容量'));
+        try{
+          for(const piece of pieces)
+            (piece.kind==='audio'?songs:art).put(piece.blob,piece.id);
+          const next=new Map(tracks.map(t=>[t.id,t]));
+          for(const old of oldTracks){
+            if(old.kind==='file'&&next.get(old.id)?.kind!=='file') songs.delete(old.id);
+            if(!next.has(old.id)||!keys.has('cover:'+old.id)) art.delete(old.id);
+          }
+          if(!keys.has('wallpaper:'+WALLPAPER_KEY)) art.delete(WALLPAPER_KEY);
+        }catch(error){try{tx.abort();}catch{} reject(error);}
+      });
+    }finally{db.close();}
   }
   async function importFullBackup(file) {
-    if (!file) return;
-    const header = new TextDecoder().decode(await file.slice(0,18).arrayBuffer());
-    if (!/^SWBK1\n[0-9]{12}$/.test(header)) throw new Error('不是听风完整备份文件');
-    const length = Number(header.slice(6));
-    if (!Number.isSafeInteger(length) || length < 2 || length > 5000000) throw new Error('备份信息大小异常');
-    const meta = JSON.parse(new TextDecoder().decode(await file.slice(18,18+length).arrayBuffer()));
-    if (meta.format !== 'soundwalk-complete' || ![1,2].includes(meta.version) ||
-        !Array.isArray(meta.settings?.tracks) || !Array.isArray(meta.entries)) throw new Error('备份格式不受支持');
-    const inputTracks = meta.settings.tracks;
-    if (inputTracks.length > MAX_TRACKS || meta.entries.length > MAX_TRACKS*2+1) throw new Error('备份歌曲数量超出限制');
-    const tracks = inputTracks.map(validateTrack);
-    if (tracks.some(t=>!t) || new Set(tracks.map(t=>t.id)).size !== tracks.length) throw new Error('备份歌曲信息无效');
-    const byId = new Map(tracks.map(t=>[t.id,t]));
-    const pieces = [], keys = new Set();
-    let offset = 18 + length;
-    for (const entry of meta.entries) {
-      const {id,kind,size} = entry || {};
-      const mark = kind+':'+id;
-      const valid = kind==='wallpaper'
-        ? (meta.version===2 && id===WALLPAPER_KEY)
-        : (byId.has(id) && ['audio','cover'].includes(kind));
-      if (!valid || keys.has(mark) ||
-          !Number.isSafeInteger(size) || size<0 ||
-          size>(kind==='audio' ? MAX_FILE_SIZE : kind==='wallpaper' ? WALLPAPER_MAX_BYTES : COVER_MAX_BYTES) ||
-          offset+size>file.size) {
-        throw new Error('备份里的音频或封面数据不完整');
-      }
-      keys.add(mark);
-      pieces.push({id,kind,blob:file.slice(offset,offset+size,entry.type || 'application/octet-stream')});
-      offset += size;
-    }
-    if (offset !== file.size || tracks.some(t=>t.kind==='file' && !keys.has('audio:'+t.id))) throw new Error('备份文件有缺失或多余的数据');
-    if (!window.confirm(`恢复 ${tracks.length} 首歌曲？\n此操作将替换听风现有的播放列表、绑定和设置。请先备份当前歌单。`)) return;
-    $('.sw-backup-import').disabled = true;
-    try {
-      notice('正在恢复完整备份，期间请不要关闭页面…');
-      for (const piece of pieces) {
-        if (piece.kind === 'audio') await fileAction('put',piece.id,piece.blob);
-        else await coverAction('put',piece.id,piece.blob);
-      }
-      // Only after all required audio data is saved do we replace the visible playlist.
+    if(!file)return;
+    $('.sw-backup-import').disabled=true;
+    try{
+      notice('恢复前先校验备份，请稍候…');
+      const {meta,tracks,pieces,keys,verified}=await verifyFullBackup(file);
+      const warning=verified ? '媒体文件和备份目录的校验码全部通过。' :
+        '这是旧版备份：结构检查通过，但没有媒体校验码，无法证明文件内容完好。';
+      if(!window.confirm(warning+'\n确认用这 '+tracks.length+' 首歌曲替换听风现有歌单与设置？\n建议先备份当前歌单。'))return;
+      notice('正在安全恢复媒体文件，请不要关闭酒馆…');
+      const oldTracks=settings.tracks.slice();
+      await commitBackupMedia(pieces,tracks,oldTracks,keys);
+      // Only after all media writes commit do we update the playlist/settings.
       audio.pause();
-      const oldTracks = settings.tracks;
-      settings.tracks = tracks;
-      settings.roleOrders = normalizeRoleOrders(meta.settings.roleOrders);
-      settings.characterLabels = Object.fromEntries(Object.entries(meta.settings.characterLabels || {})
-        .filter(([k,v])=>k.startsWith('avatar:') && k.length <= 310 && typeof v==='string')
+      settings.tracks=tracks;
+      settings.roleOrders=normalizeRoleOrders(meta.settings.roleOrders);
+      settings.characterLabels=Object.fromEntries(Object.entries(meta.settings.characterLabels||{})
+        .filter(([k,v])=>k.startsWith('avatar:')&&k.length<=310&&typeof v==='string')
         .slice(0,300).map(([k,v])=>[k,cleanText(v,70)]));
-      mode = ['all','one','shuffle'].includes(meta.settings.mode)?meta.settings.mode:'all';
-      audio.volume = Number.isFinite(meta.settings.volume) ? Math.max(0,Math.min(1,meta.settings.volume)) : .72;
-      followCharacter = meta.settings.followCharacter === true;
-      autoRolePlayback = meta.settings.autoRolePlayback === true;
-      manualFilter = typeof meta.settings.manualFilter === 'string' ? meta.settings.manualFilter : 'all';
-      openPet = meta.settings.openPet === 'shepherd' ? 'shepherd' : 'golden';
-      brandIcon = meta.settings.brandIcon === 'paw' ? 'paw' : 'cat';
-      panelOpacity = Number.isFinite(meta.settings.panelOpacity) ? Math.max(0,Math.min(100,Math.round(meta.settings.panelOpacity))) : 100;
-      frostBlur = Number.isFinite(meta.settings.frostBlur) ? Math.max(0,Math.min(30,Math.round(meta.settings.frostBlur))) :
-        (panelOpacity < 100 ? 12 : 0);
-      if (!keys.has('wallpaper:'+WALLPAPER_KEY)) await coverAction('delete',WALLPAPER_KEY);
-      if (meta.settings.orbPosition && Number.isFinite(meta.settings.orbPosition.x) && Number.isFinite(meta.settings.orbPosition.y)) {
-        orbPosition = {x:Math.max(0,Math.min(1,meta.settings.orbPosition.x)),y:Math.max(0,Math.min(1,meta.settings.orbPosition.y))};
+      mode=['all','one','shuffle'].includes(meta.settings.mode)?meta.settings.mode:'all';
+      audio.volume=Number.isFinite(meta.settings.volume)?Math.max(0,Math.min(1,meta.settings.volume)):.72;
+      followCharacter=meta.settings.followCharacter===true;
+      autoRolePlayback=meta.settings.autoRolePlayback===true;
+      manualFilter=typeof meta.settings.manualFilter==='string'?meta.settings.manualFilter:'all';
+      openPet=meta.settings.openPet==='shepherd'?'shepherd':'golden';
+      brandIcon=meta.settings.brandIcon==='paw'?'paw':'cat';
+      panelOpacity=Number.isFinite(meta.settings.panelOpacity)?Math.max(0,Math.min(100,Math.round(meta.settings.panelOpacity))):100;
+      frostBlur=Number.isFinite(meta.settings.frostBlur)?Math.max(0,Math.min(30,Math.round(meta.settings.frostBlur))):(panelOpacity<100?12:0);
+      if(meta.settings.orbPosition&&Number.isFinite(meta.settings.orbPosition.x)&&Number.isFinite(meta.settings.orbPosition.y)){
+        orbPosition={x:Math.max(0,Math.min(1,meta.settings.orbPosition.x)),y:Math.max(0,Math.min(1,meta.settings.orbPosition.y))};
         positionOrb();
       }
-      for (const key of coverUrls.values()) if (key) URL.revokeObjectURL(key);
+      for(const url of coverUrls.values())if(url)URL.revokeObjectURL(url);
       coverUrls.clear();coverPending.clear();coverQueue.length=0;
-      for (const t of oldTracks) {
-        if (!byId.has(t.id)) {
-          if (t.kind === 'file') await fileAction('delete',t.id).catch(()=>{});
-          await coverAction('delete',t.id).catch(()=>{});
-        } else if (!keys.has('cover:'+t.id)) await coverAction('delete',t.id).catch(()=>{});
-      }
-      // Keep the page quiet after restore; allow the next character change to auto-start.
-      currentIndex = -1;lastRoleSignature = '';
-      searchQuery = '';$('.sw-search').value = '';
+      currentIndex=-1;lastRoleSignature='';
+      searchQuery='';$('.sw-search').value='';
       wallpaperRevision++;
       if(wallpaperUrl){URL.revokeObjectURL(wallpaperUrl);wallpaperUrl=null;}
       const wallpaperPiece=pieces.find(p=>p.kind==='wallpaper');
-      if(wallpaperPiece) wallpaperUrl=URL.createObjectURL(wallpaperPiece.blob);
-      applyAppearance();
-      updateBrandIcon();syncPetChoices();syncPanelState();
+      if(wallpaperPiece)wallpaperUrl=URL.createObjectURL(wallpaperPiece.blob);
+      applyAppearance();updateBrandIcon();syncPetChoices();syncPanelState();
       await selectTrack(-1,false);
       renderTransport();refreshFilter();persist();
-      notice(`恢复完成：${tracks.length} 首歌曲、封面和外观设置已找回`);
-    } finally {$('.sw-backup-import').disabled = false;}
+      notice('安全恢复完成：'+tracks.length+' 首歌曲'+(verified?'，校验通过 ✓':'（旧版备份）'));
+    }catch(e){notice(e.message||'恢复失败，已保留现有歌单');}
+    finally{$('.sw-backup-import').disabled=false;}
   }
-  $('.sw-backup-export').addEventListener('click',()=>void exportFullBackup());
+    $('.sw-backup-export').addEventListener('click',()=>void exportFullBackup());
+
+  $('.sw-backup-check').addEventListener('click',()=>backupCheckInput.click());
+  backupCheckInput.addEventListener('change',async()=>{
+    const file=backupCheckInput.files?.[0];backupCheckInput.value='';
+    if(!file)return;
+    $('.sw-backup-check').disabled=true;
+    try{
+      notice('检查备份结构与媒体校验码中…');
+      const {tracks,pieces,verified}=await verifyFullBackup(file);
+      notice(verified
+        ? '校验通过 ✓ '+tracks.length+' 首歌曲，'+pieces.length+' 个媒体文件完整'
+        : '旧版备份结构检查通过（'+tracks.length+' 首）；无校验码，建议重新备份');
+    }catch(e){notice(e.message||'备份检查失败，请换一份文件');}
+    finally{$('.sw-backup-check').disabled=false;}
+  });
   $('.sw-backup-import').addEventListener('click',()=>backupInput.click());
   backupInput.addEventListener('change',async()=>{
     const file = backupInput.files?.[0];backupInput.value='';
