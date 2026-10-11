@@ -193,12 +193,14 @@ function init() {
   // means a finger gesture cannot accidentally trigger two actions.
   let drag = null;
   let lastDragEnd = 0;
+  let lastPointerTapAt = 0;
   orb.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
     const box = orb.getBoundingClientRect();
     drag = {id:event.pointerId, startX:event.clientX, startY:event.clientY,
       left:box.left, top:box.top, moved:false};
-    try { orb.setPointerCapture(event.pointerId); } catch {}
+    // Touchscreens capture touch pointers automatically. Only capture explicitly
+    // once a drag starts: capturing taps can prevent the synthetic click.
     event.stopPropagation();
   });
   orb.addEventListener('pointermove', event => {
@@ -208,25 +210,32 @@ function init() {
     if (!drag.moved && Math.hypot(dx, dy) > 7) {
       drag.moved = true;
       orb.classList.add('sw-dragging');
+      try { orb.setPointerCapture(event.pointerId); } catch {}
     }
     if (!drag.moved) return;
     setOrbXY(drag.left + dx, drag.top + dy);
     event.preventDefault();
     event.stopPropagation();
   });
-  function finishDrag(event) {
+  function finishDrag(event, cancelled = false) {
     if (!drag || event.pointerId !== drag.id) return;
-    if (drag.moved) {
-      lastDragEnd = Date.now();
-      persist();
-    }
+    const wasDrag = drag.moved;
     drag = null;
     orb.classList.remove('sw-dragging');
     try { if (orb.hasPointerCapture(event.pointerId)) orb.releasePointerCapture(event.pointerId); } catch {}
+    if (wasDrag) {
+      lastDragEnd = Date.now();
+      persist();
+    } else if (!cancelled) {
+      // Toggle directly on pointerup: some Android browsers omit click after
+      // gesture interception or pointer capture.
+      lastPointerTapAt = Date.now();
+      showPanel(panel.hidden);
+    }
     event.stopPropagation();
   }
-  orb.addEventListener('pointerup', finishDrag);
-  orb.addEventListener('pointercancel', finishDrag);
+  orb.addEventListener('pointerup', event => finishDrag(event));
+  orb.addEventListener('pointercancel', event => finishDrag(event, true));
 
   function notice(message) {
     const el = $('.sw-notice');
@@ -242,9 +251,10 @@ function init() {
   }
   function showPanel(show) {
     panel.hidden = !show;
+    orb.classList.toggle('sw-open', show);
     orb.setAttribute('aria-expanded', String(show));
-    if (show) $('.sw-close').focus();
-    else orb.focus();
+    if (show) $('.sw-close').focus({preventScroll:true});
+    else orb.focus({preventScroll:true});
   }
   function formatTime(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -481,7 +491,10 @@ function init() {
   orb.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
-    if (Date.now() - lastDragEnd < 350) return;
+    // Fallback for keyboard and browsers without Pointer Events, without
+    // double-toggling after an already handled pointerup.
+    if (event.detail !== 0 && Date.now() - lastPointerTapAt < 750) return;
+    if (event.detail !== 0 && Date.now() - lastDragEnd < 750) return;
     showPanel(panel.hidden);
   });
   $('.sw-close').addEventListener('click', () => showPanel(false));
