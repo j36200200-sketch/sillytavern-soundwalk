@@ -22,44 +22,15 @@ const icons = {
   mute: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 9H2v6h3l6 5V4zM15 9l6 6m0-6-6 6"/></svg>'
 };
 
+const petAssets = Object.freeze({
+  cat: new URL('./assets/pets/pet-cat-v123.png', import.meta.url).href,
+  golden: new URL('./assets/pets/pet-golden-v123.png', import.meta.url).href,
+  shepherd: new URL('./assets/pets/pet-shepherd-v123.png', import.meta.url).href,
+});
 const petIcons = {
-  cat: `<svg class="sw-pet-art" viewBox="0 0 64 64" role="img" aria-label="黑色小猫" xmlns="http://www.w3.org/2000/svg">
-    <path d="M9 29 9 10Q9 6 13 10L23 18Q32 14 41 18L51 10Q55 6 55 10L55 29" fill="#191d28" stroke="#1a2530" stroke-width="2.5" stroke-linejoin="round"/>
-    <path d="M13 14 15 23 22 21ZM51 14 49 23 42 21Z" fill="#e899a7"/>
-    <path d="M9 31Q9 16 32 16Q55 16 55 31Q57 54 32 56Q7 54 9 31" fill="#202633" stroke="#101823" stroke-width="2.2"/>
-    <path d="M19 28Q25 24 29 29M35 29Q41 24 47 28" fill="none" stroke="#d1cbcc" stroke-width="1.5" opacity=".55" stroke-linecap="round"/>
-    <ellipse cx="23" cy="36" rx="5.2" ry="6.6" fill="#f6dda3"/><ellipse cx="41" cy="36" rx="5.2" ry="6.6" fill="#f6dda3"/>
-    <ellipse cx="24" cy="37" rx="1.6" ry="4.3" fill="#212b32"/><ellipse cx="40" cy="37" rx="1.6" ry="4.3" fill="#212b32"/>
-    <circle cx="22.1" cy="33.7" r="1.4" fill="white"/><circle cx="38.1" cy="33.7" r="1.4" fill="white"/>
-    <ellipse cx="16" cy="44" rx="4.5" ry="2.2" fill="#e79ea6" opacity=".65"/><ellipse cx="48" cy="44" rx="4.5" ry="2.2" fill="#e79ea6" opacity=".65"/>
-    <path d="M29 43Q32 40 35 43L32 46Z" fill="#eaa6b4"/><path d="M32 46v2m0 0q-3 3-6 0m6 0q3 3 6 0" fill="none" stroke="#e6ced1" stroke-width="1.6" stroke-linecap="round"/>
-    <path d="M12 47 3 44M12 51 4 52M52 47l9-3M52 51l8 1" fill="none" stroke="#aab5c0" stroke-width="1.1" stroke-linecap="round"/>
-    </svg>`,
-  golden: `<svg class="sw-pet-art" viewBox="0 0 64 64" role="img" aria-label="金黄色小狗" xmlns="http://www.w3.org/2000/svg">
-    <path d="M14 22Q4 17 5 34Q6 47 16 49L23 25M50 22Q60 17 59 34Q58 47 48 49L41 25" fill="#b8773d" stroke="#85552f" stroke-width="2.3" stroke-linejoin="round"/>
-    <path d="M12 32Q12 15 32 14Q52 15 52 32L51 45Q47 56 32 56Q17 56 13 45Z" fill="#eab16b" stroke="#a36a3c" stroke-width="2.5"/>
-    <path d="M20 23q12-7 24 0Q43 16 32 17Q22 16 20 23" fill="#ffda9d"/>
-    <ellipse cx="23" cy="36" rx="3.5" ry="4" fill="#29242a"/><ellipse cx="41" cy="36" rx="3.5" ry="4" fill="#29242a"/>
-    <circle cx="22" cy="34.7" r="1.3" fill="white"/><circle cx="40" cy="34.7" r="1.3" fill="white"/>
-    <ellipse cx="32" cy="45" rx="13" ry="9.5" fill="#ffe5ba"/>
-    <path d="M26 42q6-4 12 0q0 5-6 5q-6 0-6-5" fill="#3f3030"/>
-    <path d="M32 47v3m0 0q-5 3-8-1m8 1q5 3 8-1" fill="none" stroke="#6d4a3e" stroke-width="1.9" stroke-linecap="round"/>
-    <ellipse cx="17" cy="44" rx="3.7" ry="2.1" fill="#e99185" opacity=".75"/><ellipse cx="47" cy="44" rx="3.7" ry="2.1" fill="#e99185" opacity=".75"/>
-    </svg>`,
-  shepherd: `<svg class="sw-pet-art" viewBox="0 0 64 64" role="img" aria-label="黑背德牧小狗" xmlns="http://www.w3.org/2000/svg">
-    <path d="M9 28 10 3Q10 1 14 4L27 19 37 19 50 4Q54 1 54 4L55 28" fill="#2f2d31" stroke="#1c2730" stroke-width="2.5" stroke-linejoin="round"/>
-    <path d="M14 12 16 26 24 21ZM50 12 48 26 40 21Z" fill="#ba7b75"/>
-    <path d="M10 29Q10 15 32 16Q54 15 54 29L52 44Q47 56 32 56Q17 56 12 44Z" fill="#302e32" stroke="#20262d" stroke-width="2.5"/>
-    <path d="M14 30Q16 23 22 25L28 38 23 53Q13 48 14 30ZM50 30Q48 23 42 25L36 38 41 53Q51 48 50 30Z" fill="#bc8652"/>
-    <path d="M20 22Q32 15 44 22L39 30 35 40H29L25 30Z" fill="#272930"/>
-    <ellipse cx="23" cy="36" rx="3.2" ry="3.8" fill="#f4d8a4"/><ellipse cx="41" cy="36" rx="3.2" ry="3.8" fill="#f4d8a4"/>
-    <ellipse cx="23" cy="36.5" rx="1.5" ry="2.7" fill="#1c222b"/><ellipse cx="41" cy="36.5" rx="1.5" ry="2.7" fill="#1c222b"/>
-    <circle cx="22" cy="35.1" r="1" fill="white"/><circle cx="40" cy="35.1" r="1" fill="white"/>
-    <path d="M26 40Q32 35 38 40L40 49Q32 57 24 49Z" fill="#c99a69"/>
-    <path d="M27 43q5-3 10 0q0 5-5 5q-5 0-5-5" fill="#24232a"/>
-    <path d="M32 48v2m0 0q-4 3-6 0m6 0q4 3 6 0" fill="none" stroke="#4b3a37" stroke-width="1.6" stroke-linecap="round"/>
-    <ellipse cx="16" cy="44" rx="3.1" ry="2.1" fill="#e8a195" opacity=".58"/><ellipse cx="48" cy="44" rx="3.1" ry="2.1" fill="#e8a195" opacity=".58"/>
-    </svg>`
+  cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
+  golden: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.golden}" alt="萌萌金毛小狗" draggable="false" decoding="async" />`,
+  shepherd: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.shepherd}" alt="可爱德牧幼犬" draggable="false" decoding="async" />`
 };
 
 function uid() {
@@ -177,7 +148,7 @@ function init() {
         <button class="sw-icon sw-close" type="button" aria-label="关闭播放器">${icons.close}</button></div>
       </header>
       <section id="soundwalk-pet-settings" class="sw-pet-settings" aria-label="宠物图标设置" hidden>
-        <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是黑猫头 · 展开是狗狗头 · 头像没有方形底框</span></div>
+        <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是软乎乎黑猫 · 展开是萌萌小狗 · 贴纸头像无方形底框</span></div>
         <div class="sw-pet-choices" role="group" aria-label="打开时的小狗图标">
           <button class="sw-pet-choice" type="button" data-pet="golden" aria-pressed="true"><span class="sw-pet-thumb">${petIcons.golden}</span><span>金毛小狗</span></button>
           <button class="sw-pet-choice" type="button" data-pet="shepherd" aria-pressed="false"><span class="sw-pet-thumb">${petIcons.shepherd}</span><span>黑背德牧</span></button>

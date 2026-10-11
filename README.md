@@ -117,3 +117,11 @@ ls data/default-user/extensions/soundwalk-player
 - 改用非模态的原生 `<dialog>.show()`：面板仍在浏览器顶部图层，但打开后页面不会被遮罩锁住，狗狗头像保持可见、可点击收起；也可通过面板内 × 关闭。
 - 延用 `soundwalk-player-v1` 浏览器存储键及原 IndexedDB 音频库，不清空本地歌曲、角色绑定、皮肤类型及浮动头像位置。
 - 由 v1.2.0 升级，无须重新导入歌单；刷新前建议确保原始歌曲文件仍有备份。
+
+
+## v1.2.3 · 萌系猫狗头像（GitHub 自动更新版）
+
+- 浮动按钮使用三张已经定稿的猫狗贴纸：软乎乎大眼黑猫、吐舌头金毛小狗、圆脸德牧幼犬。
+- 图片放在 `assets/pets/`，以 PNG 资源相对路径加载；不再把大张 PNG 内嵌到 `index.js`，更便于 GitHub 更新。
+- 仍然是收起显示黑猫、打开显示所选狗狗；宠物设置、拖动及位置记忆不变。
+- 沿用 `soundwalk-player-v1` 的 localStorage 与 `soundwalk-player-audio-v1` 的 IndexedDB，本地歌单和角色绑定数据不会因这次代码更新而被主动清除。

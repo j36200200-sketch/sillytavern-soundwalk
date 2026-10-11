@@ -206,3 +206,6 @@
   #soundwalk-player-root .sw-footer { padding:9px 13px; }
 }
 @media(prefers-reduced-motion:reduce){#soundwalk-player-root *,#soundwalk-player-root *::before {animation:none!important;transition:none!important;}}
+
+/* v1.2.3 PNG pet stickers preserve soft painted details at small sizes. */
+#soundwalk-player-root .sw-pet-raster { object-fit: contain; image-rendering: auto; -webkit-user-drag: none; }
