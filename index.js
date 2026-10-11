@@ -35,12 +35,27 @@ const petAssets = Object.freeze({
   cat: new URL('./assets/pets/pet-cat-v123.png', import.meta.url).href,
   golden: new URL('./assets/pets/pet-golden-v123.png', import.meta.url).href,
   shepherd: new URL('./assets/pets/pet-shepherd-v123.png', import.meta.url).href,
+  owl: new URL('./assets/pets/pet-owl-v135.svg', import.meta.url).href,
+  raven: new URL('./assets/pets/pet-raven-v135.svg', import.meta.url).href,
+  snake: new URL('./assets/pets/pet-snake-v135.svg', import.meta.url).href,
+  wolf: new URL('./assets/pets/pet-wolf-v135.svg', import.meta.url).href,
+  samoyed: new URL('./assets/pets/pet-samoyed-v135.svg', import.meta.url).href,
 });
 const petIcons = {
   cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
   golden: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.golden}" alt="萌萌金毛小狗" draggable="false" decoding="async" />`,
-  shepherd: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.shepherd}" alt="可爱德牧幼犬" draggable="false" decoding="async" />`
+  shepherd: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.shepherd}" alt="可爱德牧幼犬" draggable="false" decoding="async" />`,
+  owl: `<img class="sw-pet-art" src="${petAssets.owl}" alt="胖乎乎雪鸮" draggable="false" decoding="async" />`,
+  raven: `<img class="sw-pet-art" src="${petAssets.raven}" alt="细长小乌鸦" draggable="false" decoding="async" />`,
+  snake: `<img class="sw-pet-art" src="${petAssets.snake}" alt="软萌小蛇" draggable="false" decoding="async" />`,
+  wolf: `<img class="sw-pet-art" src="${petAssets.wolf}" alt="蓬松小狼" draggable="false" decoding="async" />`,
+  samoyed: `<img class="sw-pet-art" src="${petAssets.samoyed}" alt="雪白萨摩耶" draggable="false" decoding="async" />`
 };
+const CLOSED_PETS = Object.freeze(['cat', 'golden', 'shepherd', 'owl', 'raven', 'snake', 'wolf', 'samoyed']);
+const PET_LABELS = Object.freeze({
+  cat: '小黑猫', golden: '金毛小狗', shepherd: '黑背德牧', owl: '雪鸮',
+  raven: '乌鸦', snake: '小蛇', wolf: '小狼', samoyed: '萨摩耶'
+});
 
 function uid() {
   return (globalThis.crypto?.randomUUID?.() || `sw-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -77,7 +92,7 @@ function normalizeRoleOrders(raw) {
     .map(([key,ids]) => [key,[...new Set(ids.filter(id => typeof id === 'string' && id.length <= 150))].slice(0,MAX_TRACKS)]));
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0 };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', closedPet: 'cat', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0 };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -96,6 +111,7 @@ function readSettings() {
       autoRolePlayback: data.autoRolePlayback === true,
       roleOrders: normalizeRoleOrders(data.roleOrders),
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
+      closedPet: CLOSED_PETS.includes(data.closedPet) ? data.closedPet : 'cat',
       brandIcon: data.brandIcon === 'paw' ? 'paw' : 'cat',
       panelOpacity: Number.isFinite(data.panelOpacity) ? Math.max(0, Math.min(100, Math.round(data.panelOpacity))) : 100,
       // Older semi-transparent skins automatically gain a gentle frost once.
@@ -253,6 +269,7 @@ function init() {
   let followCharacter = settings.followCharacter;
   let autoRolePlayback = settings.autoRolePlayback;
   let openPet = settings.openPet;
+  let closedPet = settings.closedPet;
   let brandIcon = settings.brandIcon;
   let panelOpacity = settings.panelOpacity;
   let frostBlur = settings.frostBlur;
@@ -280,7 +297,7 @@ function init() {
   root.setAttribute('aria-label', '听风音乐播放器');
   root.innerHTML = `
     <button class="sw-orb" type="button" aria-label="打开听风音乐播放器" aria-expanded="false">
-      <span class="sw-orb-pet" aria-hidden="true">${petIcons.cat}</span><span class="sw-orb-pulse" aria-hidden="true"></span>
+      <span class="sw-orb-pet" aria-hidden="true">${petIcons[closedPet]}</span><span class="sw-orb-pulse" aria-hidden="true"></span>
     </button>
     <dialog id="soundwalk-player-modal" class="sw-panel" aria-label="听风播放器">
       <header class="sw-header">
@@ -299,10 +316,15 @@ function init() {
         <p class="sw-appearance-hint">透明度控制背景浓淡；虚化控制壁纸和聊天背景的模糊程度。0px 清晰，14～20px 柔雾感较强；音乐控件和文字不会变模糊。</p>
       </section>
       <section id="soundwalk-pet-settings" class="sw-pet-settings" aria-label="宠物图标设置" hidden>
-        <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是软乎乎黑猫 · 展开是萌萌小狗 · 贴纸头像无方形底框</span></div>
-        <div class="sw-pet-choices" role="group" aria-label="打开时的小狗图标">
-          <button class="sw-pet-choice" type="button" data-pet="golden" aria-pressed="true"><span class="sw-pet-thumb">${petIcons.golden}</span><span>金毛小狗</span></button>
-          <button class="sw-pet-choice" type="button" data-pet="shepherd" aria-pressed="false"><span class="sw-pet-thumb">${petIcons.shepherd}</span><span>黑背德牧</span></button>
+        <div class="sw-pet-info"><strong>宠物头像衣橱</strong><span>收起和展开可独立选择 · 默认小黑猫 · 透明贴纸无方框</span></div>
+        <div class="sw-pet-group-heading"><strong>收起时显示</strong><span>让喜欢的小动物守在聊天页旁边</span></div>
+        <div class="sw-pet-choices sw-pet-closed-choices" role="group" aria-label="收起时的动物头像">
+          ${CLOSED_PETS.map(pet => `<button class="sw-pet-choice" type="button" data-state="closed" data-pet="${pet}" aria-pressed="${String(pet === closedPet)}"><span class="sw-pet-thumb">${petIcons[pet]}</span><span>${PET_LABELS[pet]}</span></button>`).join('')}
+        </div>
+        <div class="sw-pet-group-heading"><strong>展开时显示</strong><span>保留原来的两只狗狗</span></div>
+        <div class="sw-pet-choices sw-pet-open-choices" role="group" aria-label="展开时的小狗头像">
+          <button class="sw-pet-choice" type="button" data-state="open" data-pet="golden" aria-pressed="true"><span class="sw-pet-thumb">${petIcons.golden}</span><span>金毛小狗</span></button>
+          <button class="sw-pet-choice" type="button" data-state="open" data-pet="shepherd" aria-pressed="false"><span class="sw-pet-thumb">${petIcons.shepherd}</span><span>黑背德牧</span></button>
         </div>
       </section>
       <div class="sw-now">
@@ -568,7 +590,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, brandIcon, panelOpacity, frostBlur}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, closedPet, brandIcon, panelOpacity, frostBlur}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -581,17 +603,17 @@ function init() {
   }
   function syncPetChoices() {
     root.querySelectorAll('.sw-pet-choice').forEach(button => {
-      const selected = button.dataset.pet === openPet;
+      const selected = button.dataset.pet === (button.dataset.state === 'closed' ? closedPet : openPet);
       button.setAttribute('aria-pressed', String(selected));
       button.classList.toggle('sw-selected', selected);
     });
   }
   function syncPanelState() {
     const open = isPanelOpen();
-    $('.sw-orb-pet').innerHTML = open ? petIcons[openPet] : petIcons.cat;
+    $('.sw-orb-pet').innerHTML = open ? petIcons[openPet] : petIcons[closedPet];
     orb.classList.toggle('sw-open', open);
     orb.setAttribute('aria-expanded', String(open));
-    orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : '打开听风音乐播放器');
+    orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : `打开听风音乐播放器，当前头像：${PET_LABELS[closedPet]}`);
   }
   // Follow the movable pet head. Keep the panel inside the screen:
   // below the head when possible, above it near the bottom, and aligned
@@ -1249,7 +1271,7 @@ function init() {
         await addChecked('wallpaper',WALLPAPER_KEY,wallpaper,'播放器壁纸',WALLPAPER_MAX_BYTES);
       const unsigned={format:'soundwalk-complete',version:3,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
-          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,brandIcon,orbPosition,panelOpacity,frostBlur},entries};
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur},entries};
       const metadataCrc32=checksumHex(new TextEncoder().encode(JSON.stringify(unsigned)));
       const meta={...unsigned,metadataCrc32};
       const payload=new TextEncoder().encode(JSON.stringify(meta));
@@ -1373,6 +1395,7 @@ function init() {
       autoRolePlayback=meta.settings.autoRolePlayback===true;
       manualFilter=typeof meta.settings.manualFilter==='string'?meta.settings.manualFilter:'all';
       openPet=meta.settings.openPet==='shepherd'?'shepherd':'golden';
+      closedPet=CLOSED_PETS.includes(meta.settings.closedPet)?meta.settings.closedPet:'cat';
       brandIcon=meta.settings.brandIcon==='paw'?'paw':'cat';
       panelOpacity=Number.isFinite(meta.settings.panelOpacity)?Math.max(0,Math.min(100,Math.round(meta.settings.panelOpacity))):100;
       frostBlur=Number.isFinite(meta.settings.frostBlur)?Math.max(0,Math.min(30,Math.round(meta.settings.frostBlur))):(panelOpacity<100?12:0);
@@ -1529,11 +1552,20 @@ function init() {
     requestAnimationFrame(positionPanelNearOrb);
   });
   root.querySelectorAll('.sw-pet-choice').forEach(button => button.addEventListener('click', () => {
-    openPet = button.dataset.pet === 'shepherd' ? 'shepherd' : 'golden';
+    const pet = button.dataset.pet;
+    if (button.dataset.state === 'closed') {
+      if (!CLOSED_PETS.includes(pet)) return;
+      closedPet = pet;
+    } else {
+      if (!['golden', 'shepherd'].includes(pet)) return;
+      openPet = pet;
+    }
     syncPetChoices();
     syncPanelState();
     persist();
-    notice(openPet === 'shepherd' ? '已选黑背德牧 · 收起后仍显示黑猫' : '已选金毛小狗 · 收起后仍显示黑猫');
+    notice(button.dataset.state === 'closed'
+      ? `收起头像已换成${PET_LABELS[closedPet]} · 下次打开仍会保留`
+      : `展开头像已换成${PET_LABELS[openPet]}`);
   }));
   $('.sw-close').addEventListener('click', () => showPanel(false));
   root.addEventListener('keydown', e => { if (e.key === 'Escape' && isPanelOpen()) showPanel(false); });
