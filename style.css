@@ -1,0 +1,108 @@
+/* Soundwalk Music — self-contained SillyTavern styles. */
+#soundwalk-player-root {
+  --sw-bg: #16232c;
+  --sw-bg2: #203640;
+  --sw-edge: rgba(199, 231, 220, .17);
+  --sw-cream: #f5efe0;
+  --sw-muted: #b7c4c3;
+  --sw-mint: #8fd7b9;
+  --sw-peach: #ffbb98;
+  color: var(--sw-cream);
+  position: relative;
+  font: 400 14px/1.45 ui-sans-serif, system-ui, -apple-system, 'Noto Sans SC', sans-serif;
+  z-index: 2147481000;
+}
+#soundwalk-player-root *, #soundwalk-player-root *::before, #soundwalk-player-root *::after { box-sizing: border-box; }
+#soundwalk-player-root [hidden] { display: none !important; }
+#soundwalk-player-root button, #soundwalk-player-root input, #soundwalk-player-root select { font: inherit; }
+#soundwalk-player-root button { cursor: pointer; border: 0; }
+#soundwalk-player-root button:focus-visible, #soundwalk-player-root input:focus-visible, #soundwalk-player-root select:focus-visible { outline: 2px solid var(--sw-peach); outline-offset: 2px; }
+#soundwalk-player-root .sw-orb {
+  position: fixed; left: max(12px, env(safe-area-inset-left)); top: 38%;
+  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 16px;
+  color: #142c2b; background: linear-gradient(135deg, #d9eabb, #80c8b6);
+  box-shadow: 0 6px 24px #041b1c63, inset 0 1px 0 #ffffff9c;
+  z-index: 2147481001; transition: transform .15s;
+}
+#soundwalk-player-root .sw-orb:hover { transform: translateY(-2px); }
+#soundwalk-player-root .sw-orb-pulse { position: absolute; width: 6px; height: 6px; top: 7px; right: 7px; border-radius: 50%; background: #fe9b72; opacity: 0; }
+#soundwalk-player-root .sw-orb.sw-active .sw-orb-pulse { opacity: 1; animation: sw-beat 1.6s ease-in-out infinite; }
+@keyframes sw-beat { 50% { transform: scale(1.5); opacity: .45; } }
+#soundwalk-player-root .sw-panel {
+  position: fixed; bottom: max(12px, env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left));
+  width: min(365px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 30px));
+  display: flex; flex-direction: column; overflow: hidden;
+  color: var(--sw-cream); background: linear-gradient(152deg, #24414d 0%, #15252f 45%, #11212b 100%);
+  border: 1px solid var(--sw-edge); border-radius: 20px;
+  box-shadow: 0 24px 80px #040f16bf, inset 0 1px 0 #ffffff12;
+  z-index: 2147481002;
+  backdrop-filter: blur(18px);
+}
+#soundwalk-player-root .sw-header { min-height: 65px; padding: 14px 17px; display:flex; justify-content:space-between; align-items:center; gap:8px; border-bottom:1px solid #ffffff12; }
+#soundwalk-player-root .sw-brand { display:flex; gap:10px; align-items:center; }
+#soundwalk-player-root .sw-brand-dot { width: 23px; height: 23px; background: radial-gradient(circle at 35% 30%, #fff5da, #fdb99a 50%, #eaa474 53%, transparent 55%); border-radius:50%; box-shadow: 0 0 0 3px #d8eee01c; }
+#soundwalk-player-root .sw-brand strong { display:block; font-size:16px; letter-spacing:.08em; }
+#soundwalk-player-root .sw-brand small { display:block; font-size:10px; letter-spacing:.04em; color:var(--sw-muted); }
+#soundwalk-player-root .sw-icon { flex-shrink:0; width:35px; height:35px; display:inline-flex; align-items:center; justify-content:center; color:var(--sw-cream); border-radius:11px; background:transparent; }
+#soundwalk-player-root .sw-icon:hover { background: #ffffff15; }
+#soundwalk-player-root .sw-close { color:var(--sw-muted); }
+#soundwalk-player-root .sw-now { display:flex; align-items:center; gap:13px; padding:15px 17px 8px; }
+#soundwalk-player-root .sw-scene { width:69px; height:69px; border-radius:15px; position:relative; overflow:hidden; flex-shrink:0; background:linear-gradient(160deg,#466c73,#253f4e 67%,#162833); box-shadow:0 5px 14px #080f1644; }
+#soundwalk-player-root .sw-sun { position:absolute; top:13px; right:15px; width:21px; height:21px; background:#ffcf9d; border-radius:50%; box-shadow:0 0 17px #f3af85ad; }
+#soundwalk-player-root .sw-hill { position:absolute; display:block; height:70px; width:100px; border-radius:50%; }
+#soundwalk-player-root .sw-hill-a { left:-32px; top:39px; background:#518378; transform:rotate(-10deg); }
+#soundwalk-player-root .sw-hill-b { right:-41px; top:42px; background:#233e47; transform:rotate(20deg); }
+#soundwalk-player-root .sw-stars { position:absolute; top:5px; left:9px; color:#e8e6d4; font-size:17px; }
+#soundwalk-player-root .sw-now-title { display:flex; flex-direction:column; min-width:0; gap:5px; }
+#soundwalk-player-root .sw-title { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:16px; font-weight:650; }
+#soundwalk-player-root .sw-artist { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--sw-muted); font-size:12px; }
+#soundwalk-player-root .sw-progress-area { padding: 2px 19px 0; }
+#soundwalk-player-root input[type="range"] { accent-color:var(--sw-mint); cursor:pointer; }
+#soundwalk-player-root .sw-seek { display:block; width:100%; margin:5px 0 0; height:13px; }
+#soundwalk-player-root .sw-times { display:flex; justify-content:space-between; font-size:11px; color:var(--sw-muted); margin-top:-1px; }
+#soundwalk-player-root .sw-controls { display:flex; align-items:center; justify-content:center; gap:12px; padding:2px 18px 4px; }
+#soundwalk-player-root .sw-mode { color:var(--sw-mint); font-size:25px; font-weight:700; }
+#soundwalk-player-root .sw-main-play { width:50px; height:50px; color:#173633; border-radius:17px; display:inline-grid; place-items:center; background:linear-gradient(135deg,#d8e5b6,#9ed5b8); box-shadow:0 7px 18px #030b122b; }
+#soundwalk-player-root .sw-main-play:hover { filter:brightness(1.06); }
+#soundwalk-player-root .sw-volume-row { display:flex; align-items:center; gap:7px; padding:3px 18px 12px; font-size:11px; color:var(--sw-muted); border-bottom:1px solid #ffffff16; }
+#soundwalk-player-root .sw-volume { width:70px; min-width:30px; }
+#soundwalk-player-root .sw-volume-row label { margin-left:auto; }
+#soundwalk-player-root .sw-sleep { max-width:90px; background:#ffffff13; border:1px solid #ffffff21; border-radius:8px; padding:4px 6px; font-size:11px; color:var(--sw-cream); }
+#soundwalk-player-root .sw-sleep option { background:#243841; }
+#soundwalk-player-root .sw-list-head { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:12px 17px 7px; }
+#soundwalk-player-root .sw-list-head strong { font-size:13px; white-space:nowrap; }
+#soundwalk-player-root .sw-count { font-weight:500; color:var(--sw-mint); }
+#soundwalk-player-root .sw-tools { display:flex; gap:5px; }
+#soundwalk-player-root .sw-text-button { color:#d5efe2; background:#ffffff16; padding:5px 9px; font-size:12px; border-radius:8px; }
+#soundwalk-player-root .sw-text-button:hover { background:#ffffff26; }
+#soundwalk-player-root .sw-list { margin:0 13px 0; padding:0; list-style:none; overflow-y:auto; min-height:48px; max-height:190px; flex:1; scrollbar-width:thin; scrollbar-color:#68858144 transparent; }
+#soundwalk-player-root .sw-track { display:flex; gap:3px; justify-content:space-between; align-items:center; border-radius:10px; margin:3px 0; background:#ffffff0a; }
+#soundwalk-player-root .sw-track.sw-current { background:#92dcc21b; box-shadow:inset 3px 0 0 var(--sw-mint); }
+#soundwalk-player-root .sw-track-choice { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; align-items:flex-start; text-align:left; color:var(--sw-cream); background:transparent; padding:8px 9px; }
+#soundwalk-player-root .sw-track-name { font-size:12px; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#soundwalk-player-root .sw-track-choice small { font-size:10px; color:var(--sw-muted); }
+#soundwalk-player-root .sw-track-actions { display:flex; flex-shrink:0; gap:1px; padding-right:4px; }
+#soundwalk-player-root .sw-track-action { width:30px; height:30px; border-radius:9px; color:#ccdbd6; background:transparent; font-size:17px; }
+#soundwalk-player-root .sw-track-action:hover { background:#ffffff23; }
+#soundwalk-player-root .sw-empty { font-size:12px; padding:12px 8px 16px; color:var(--sw-muted); line-height:1.6; }
+#soundwalk-player-root .sw-form { padding:11px 17px; display:grid; gap:7px; background:#122b33; border-top:1px solid #ffffff15; max-height:260px; overflow:auto; }
+#soundwalk-player-root .sw-form label { display:grid; gap:4px; font-size:11px; color:var(--sw-muted); }
+#soundwalk-player-root .sw-form input { width:100%; min-width:0; padding:8px 9px; color:var(--sw-cream); border-radius:8px; border:1px solid #ffffff2d; background:#07161a70; font-size:12px; }
+#soundwalk-player-root .sw-form-actions { display:flex; justify-content:flex-end; gap:9px; }
+#soundwalk-player-root .sw-form-actions button { padding:7px 11px; color:var(--sw-cream); border-radius:8px; background:#ffffff20; font-size:12px; }
+#soundwalk-player-root .sw-form-actions .sw-save { background:var(--sw-mint); color:#15332f; font-weight:600; }
+#soundwalk-player-root .sw-footer { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:11px 17px 12px; border-top:1px solid #ffffff16; color:var(--sw-muted); font-size:10px; }
+#soundwalk-player-root .sw-file-tools { display:flex; gap:9px; }
+#soundwalk-player-root .sw-file-tools button { color:var(--sw-peach); background:transparent; font-size:11px; padding:0; white-space:nowrap; }
+#soundwalk-player-root .sw-footer span { text-align:right; }
+#soundwalk-player-root .sw-notice { display:none; position:absolute; left:15px; right:15px; bottom:38px; z-index:2; margin:0; padding:10px 12px; background:#e5eee2; color:#133330; border-radius:10px; box-shadow:0 8px 18px #0006; font-size:12px; }
+#soundwalk-player-root .sw-notice.sw-show { display:block; }
+@media(max-width:400px){
+  #soundwalk-player-root .sw-panel { width:calc(100vw - 16px); left:8px; bottom:max(8px,env(safe-area-inset-bottom)); max-height:calc(100dvh - 16px); }
+  #soundwalk-player-root .sw-header { min-height:57px; }
+  #soundwalk-player-root .sw-now { padding-top:10px; }
+  #soundwalk-player-root .sw-scene { width:60px; height:60px; }
+  #soundwalk-player-root .sw-list { max-height:155px; }
+  #soundwalk-player-root .sw-footer { padding:9px 13px; }
+}
+@media(prefers-reduced-motion:reduce){#soundwalk-player-root *,#soundwalk-player-root *::before {animation:none!important;transition:none!important;}}
