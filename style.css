@@ -224,3 +224,17 @@
 #soundwalk-player-root .sw-track-cover:hover { outline:1px solid var(--sw-mint); }
 #soundwalk-player-root .sw-track-choice { padding-left:5px; }
 #soundwalk-player-root .sw-track-choice small { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* v1.2.5: small independent auto-play switch under the current role. */
+#soundwalk-player-root .sw-role-auto-line {
+  display:flex; flex-wrap:wrap; align-items:center; gap:5px 11px;
+  background:rgba(143,215,185,.075); border:1px solid rgba(143,215,185,.19);
+  padding:7px 9px; border-radius:9px;
+}
+#soundwalk-player-root .sw-role-auto-label {
+  display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+  color:var(--sw-cream); font-size:12px; font-weight:600;
+}
+#soundwalk-player-root .sw-role-autoplay {accent-color:var(--sw-mint); width:16px; height:16px; margin:0; cursor:pointer;}
+#soundwalk-player-root .sw-role-auto-hint {font-size:10px; line-height:1.4; color:var(--sw-muted);}
+#soundwalk-player-root .sw-role-follow:disabled {opacity:.5;}

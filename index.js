@@ -64,7 +64,7 @@ function validateTrack(raw) {
   return { id: cleanText(raw.id, 100) || uid(), title, artist, kind, bindings };
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, manualFilter: 'all', characterLabels: {}, openPet: 'golden' };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, openPet: 'golden' };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -80,6 +80,7 @@ function readSettings() {
       mode: ['all', 'one', 'shuffle'].includes(data.mode) ? data.mode : 'all',
       volume: Number.isFinite(data.volume) ? Math.max(0, Math.min(1, data.volume)) : 0.72,
       followCharacter: data.followCharacter === true,
+      autoRolePlayback: data.autoRolePlayback === true,
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
       manualFilter: typeof data.manualFilter === 'string' && data.manualFilter.length <= 320 ? data.manualFilter : 'all',
       characterLabels: Object.fromEntries(Object.entries(data.characterLabels && typeof data.characterLabels === 'object' && !Array.isArray(data.characterLabels) ? data.characterLabels : {})
@@ -174,6 +175,7 @@ function init() {
   let editId = null;
   let orbPosition = {...settings.orbPosition};
   let followCharacter = settings.followCharacter;
+  let autoRolePlayback = settings.autoRolePlayback;
   let openPet = settings.openPet;
   let manualFilter = settings.manualFilter;
   let currentCharacter = null;
@@ -229,6 +231,7 @@ function init() {
       <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button></div></div>
       <section class="sw-roles" aria-label="角色歌单设置">
         <div class="sw-role-line"><span class="sw-role-current">当前角色：识别中</span><label class="sw-role-toggle"><input class="sw-role-follow" type="checkbox" /> 随角色切换歌单</label></div>
+        <div class="sw-role-auto-line"><label class="sw-role-auto-label"><input class="sw-role-autoplay" type="checkbox" /><span>进入角色自动播放</span></label><span class="sw-role-auto-hint">已绑定角色从第一首顺序播放 · 未绑定保持静音</span></div>
         <div class="sw-role-tools"><label>歌单分组 <select class="sw-role-filter" aria-label="选择歌单分组"><option value="all">全部歌曲</option></select></label><button class="sw-text-button sw-role-manage" type="button" aria-expanded="false">管理角色绑定</button></div>
         <div class="sw-role-manager" hidden><p class="sw-role-hint">勾选歌曲，绑定到当前角色；取消勾选即解除绑定。一首歌可以绑定多个角色。</p><div class="sw-role-bind-items"></div></div>
       </section>
@@ -353,7 +356,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, manualFilter, characterLabels:settings.characterLabels, openPet}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, openPet}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -458,9 +461,11 @@ function init() {
     $('.sw-mute').innerHTML = audio.volume === 0 ? icons.mute : icons.volume;
     $('.sw-volume').value = String(Math.round(audio.volume * 100));
     const labels = {all: '列表循环', one: '单曲循环', shuffle: '随机播放'};
-    $('.sw-mode').textContent = ({all:'↻', one:'①', shuffle:'⤨'})[mode];
-    $('.sw-mode').setAttribute('aria-label', `${labels[mode]}，点击切换播放模式`);
-    $('.sw-mode').title = labels[mode];
+    const roleSequence = Boolean(autoplayRoleKey());
+    const effective = roleSequence ? 'all' : mode;
+    $('.sw-mode').textContent = ({all:'↻', one:'①', shuffle:'⤨'})[effective];
+    $('.sw-mode').setAttribute('aria-label', roleSequence ? '角色自动播放：按绑定歌单顺序循环' : `${labels[mode]}，点击切换播放模式`);
+    $('.sw-mode').title = roleSequence ? '角色自动播放固定顺序播放，关闭自动开关即可更改播放模式' : labels[mode];
   }
   // SillyTavern characterId is only an array index, not a permanent ID.
   // Avatar filename is normally stable for the installed character card.
@@ -476,7 +481,16 @@ function init() {
       return { key: `avatar:${avatar}`, name:cleanText(character.name || character.data?.name || '未命名角色',70) };
     } catch {return null;}
   }
+  // Auto mode scopes playback to this card's music, even if ordinary
+  // "follow role" was off. Without bound songs, show all tracks for
+  // deliberate manual playback, but never start any of them automatically.
+  function autoplayRoleKey() {
+    if (!autoRolePlayback || !currentCharacter) return null;
+    const key = currentCharacter.key;
+    return settings.tracks.some(track => (track.bindings || []).includes(key)) ? key : null;
+  }
   function roleFilterKey() {
+    if (autoRolePlayback) return autoplayRoleKey() || 'all';
     return followCharacter ? (currentCharacter ? currentCharacter.key : 'all') : manualFilter;
   }
   function visibleIndices() {
@@ -492,6 +506,8 @@ function init() {
     status.textContent = currentCharacter ? `当前角色：${currentCharacter.name}` : '当前：无单人角色（群聊可手动选分组）';
     status.title = status.textContent;
     $('.sw-role-follow').checked = followCharacter;
+    $('.sw-role-follow').disabled = autoRolePlayback;
+    $('.sw-role-autoplay').checked = autoRolePlayback;
     const choices = [{key:'all',name:'全部歌曲'}, {key:'unassigned',name:'未绑定歌曲'}];
     const roles = new Set(settings.tracks.flatMap(t => t.bindings || []));
     if (currentCharacter) roles.add(currentCharacter.key);
@@ -510,8 +526,9 @@ function init() {
       roleFilterSelect.append(option);
     }
     roleFilterSelect.value = selected;
-    roleFilterSelect.disabled = followCharacter;
-    roleFilterSelect.title = followCharacter ? '关闭随角色切换后可自由查看分组' : '选择要查看的歌单分组';
+    roleFilterSelect.disabled = followCharacter || autoRolePlayback;
+    roleFilterSelect.title = autoRolePlayback ? '自动播放模式下按当前角色选择歌曲' :
+      (followCharacter ? '关闭随角色切换后可自由查看分组' : '选择要查看的歌单分组');
     $('.sw-role-manage').textContent = manageBindingsOpen ? '收起绑定管理' : '管理角色绑定';
     $('.sw-role-manage').setAttribute('aria-expanded', String(manageBindingsOpen));
     roleManager.hidden = !manageBindingsOpen;
@@ -547,10 +564,16 @@ function init() {
     if (!currentCharacter) {notice('请先打开单人角色聊天'); return;}
     const track = settings.tracks.find(t => t.id === id);
     if (!track) return;
+    const oldAutoKey = autoplayRoleKey();
     const old = track.bindings || [];
     track.bindings = bound ? [...new Set([...old,currentCharacter.key])] : old.filter(k => k !== currentCharacter.key);
     settings.characterLabels[currentCharacter.key] = currentCharacter.name;
-    refreshFilter();
+    const nextAutoKey = autoplayRoleKey();
+    if (autoRolePlayback && !oldAutoKey && nextAutoKey) {
+      void selectTrack(visibleIndices()[0], true);
+    } else if (autoRolePlayback && oldAutoKey && !nextAutoKey) {
+      void selectTrack(-1, false);
+    } else refreshFilter();
     notice(bound ? `已绑定到「${currentCharacter.name}」` : `已解除「${currentCharacter.name}」的绑定`);
   }
   function refreshFilter() {
@@ -562,10 +585,19 @@ function init() {
     const role = getActiveCharacter();
     const signature = `${role?.key || ''}|${role?.name || ''}`;
     if (lastRoleSignature === signature) return;
+    const previousKey = currentCharacter?.key || null;
     lastRoleSignature = signature;
     currentCharacter = role;
     if (role) settings.characterLabels[role.key] = role.name;
-    if (followCharacter) refreshFilter();
+    if (autoRolePlayback) {
+      // Only a *real card change* restarts its playlist, not a role rename,
+      // repeated APP_READY event or timer-based recheck.
+      if (previousKey !== (role?.key || null)) {
+        const indices = visibleIndices();
+        if (autoplayRoleKey() && indices.length) void selectTrack(indices[0], true);
+        else void selectTrack(-1, false);
+      } else {renderList();persist();}
+    } else if (followCharacter) refreshFilter();
     else {renderList();persist();}
   }
   function subscribeCharacterEvents() {
@@ -806,7 +838,7 @@ function init() {
   function nextIndex(direction) {
     const indices = visibleIndices();
     if (!indices.length) return -1;
-    if (mode === 'shuffle' && indices.length > 1) {
+    if (mode === 'shuffle' && !autoplayRoleKey() && indices.length > 1) {
       const candidates = indices.filter(index => index !== currentIndex);
       return candidates[Math.floor(Math.random() * candidates.length)];
     }
@@ -815,7 +847,7 @@ function init() {
   }
   function advance(direction, fromEnded = false) {
     if (!visibleIndices().length) return;
-    if (fromEnded && mode === 'one') {
+    if (fromEnded && mode === 'one' && !autoplayRoleKey()) {
       audio.currentTime = 0;
       void play();
       return;
@@ -951,7 +983,29 @@ function init() {
     } catch (error) { notice(error.message || '歌单导入失败'); }
     finally { jsonInput.value = ''; }
   });
+  $('.sw-role-autoplay').addEventListener('change', e => {
+    autoRolePlayback = e.target.checked;
+    if (autoRolePlayback) {
+      const indices = visibleIndices();
+      if (autoplayRoleKey() && indices.length) {
+        // The toggle itself is a user gesture: try playing right away.
+        void selectTrack(indices[0], true);
+        notice('已开启自动播放：从当前角色第一首开始，按顺序播放');
+      } else {
+        void selectTrack(-1, false);
+        notice('已开启自动播放：此角色未绑定音乐，将保持静音；仍可手动点歌');
+      }
+    } else {
+      // Revert to the independent manual/follow settings already saved.
+      refreshFilter();
+      notice('已关闭自动播放，恢复手动播放');
+    }
+    renderTransport();
+    updateRoleView();
+    persist();
+  });
   $('.sw-role-follow').addEventListener('change', e => {
+    if (autoRolePlayback) { e.target.checked = followCharacter; return; }
     if (e.target.checked && !currentCharacter) {
       e.target.checked = false;
       notice('请先进入一个单人角色聊天');
@@ -962,7 +1016,7 @@ function init() {
     notice(followCharacter ? `已开启：跟随「${currentCharacter.name}」` : '已关闭自动跟随，可以自由选分组');
   });
   roleFilterSelect.addEventListener('change', e => {
-    if (followCharacter) return;
+    if (followCharacter || autoRolePlayback) return;
     manualFilter = e.target.value;
     refreshFilter();
   });
@@ -1001,6 +1055,7 @@ function init() {
   $('.sw-prev').addEventListener('click', () => advance(-1));
   $('.sw-next').addEventListener('click', () => advance(1));
   $('.sw-mode').addEventListener('click', () => {
+    if (autoplayRoleKey()) { notice('角色自动播放固定按顺序播放；关闭自动开关后可更改模式'); return; }
     mode = ({all:'one', one:'shuffle', shuffle:'all'})[mode];
     renderTransport(); persist(); notice(({all:'列表循环', one:'单曲循环', shuffle:'随机播放'})[mode]);
   });
@@ -1043,8 +1098,12 @@ function init() {
   subscribeCharacterEvents();
   syncActiveCharacter();
   renderTransport(); renderList();
-  if (visibleIndices().length) void selectTrack(visibleIndices().includes(currentIndex) ? currentIndex : visibleIndices()[0], false);
-  else currentIndex = -1;
+  // Startup auto playback (if enabled) is handled only by syncActiveCharacter.
+  // Never override it with a second, paused selectTrack request.
+  if (!autoRolePlayback) {
+    if (visibleIndices().length) void selectTrack(visibleIndices().includes(currentIndex) ? currentIndex : visibleIndices()[0], false);
+    else currentIndex = -1;
+  }
   // Some extensions initialize before ST has populated its active chat.
   for (const delay of [350, 1200, 3000]) setTimeout(syncActiveCharacter, delay);
   // Mobile browsers may pause sound when placed in the background; the extension cannot override OS policy.
