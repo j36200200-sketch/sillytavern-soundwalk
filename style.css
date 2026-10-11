@@ -19,25 +19,79 @@
 #soundwalk-player-root button, #soundwalk-player-root input, #soundwalk-player-root select { font: inherit; }
 #soundwalk-player-root button { cursor: pointer; border: 0; }
 #soundwalk-player-root button:focus-visible, #soundwalk-player-root input:focus-visible, #soundwalk-player-root select:focus-visible { outline: 2px solid var(--sw-peach); outline-offset: 2px; }
+/* The 56px *hit area* is invisible. Only the irregular SVG pet head is drawn.
+   This avoids square card backgrounds without making the phone tap target tiny. */
 #soundwalk-player-root .sw-orb {
-  position: fixed !important; left: var(--sw-orb-left, 8px) !important; top: var(--sw-orb-top, 38%) !important;
-  right: auto !important; bottom: auto !important; touch-action: none !important;
-  user-select: none; -webkit-user-select: none; pointer-events: auto !important;
-  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 15px;
-  color: #142c2b; background: linear-gradient(135deg, #d9eabb, #8fc9bf);
-  box-shadow: 0 6px 24px #041b1c63, inset 0 1px 0 #ffffff9c;
-  z-index: 2147483647 !important; transition: transform .15s;
+  position: fixed !important;
+  left: var(--sw-orb-left, 8px) !important;
+  top: var(--sw-orb-top, 38%) !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 56px !important;
+  height: 56px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline-offset: 1px;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -webkit-tap-highlight-color: transparent;
+  overflow: visible !important;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none !important;
+  pointer-events: auto !important;
+  z-index: 2147483647 !important;
+  transition: transform .15s ease, filter .15s ease;
 }
-#soundwalk-player-root .sw-orb-pet {width:44px;height:44px;display:grid;place-items:center;pointer-events:none;}
-#soundwalk-player-root .sw-pet-art {display:block;width:100%;height:100%;overflow:visible;pointer-events:none;}
-#soundwalk-player-root .sw-orb-pet .sw-pet-art {width:42px;height:42px;}
-#soundwalk-player-root .sw-orb:hover { transform: translateY(-2px); }
-#soundwalk-player-root .sw-orb.sw-open { background: linear-gradient(135deg,#fff3d0,#eccda1); box-shadow: 0 0 0 3px #fff7dc88, 0 6px 24px #041b1c63; }
-#soundwalk-player-root .sw-orb.sw-dragging { cursor: grabbing; transform: none !important; transition: none !important; }
-#soundwalk-player-root .sw-orb-pulse { position: absolute; width: 6px; height: 6px; top: 7px; right: 7px; border-radius: 50%; background: #fe9b72; opacity: 0; }
+#soundwalk-player-root .sw-orb-pet {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 4px rgba(3, 11, 17, .42));
+}
+#soundwalk-player-root .sw-pet-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+#soundwalk-player-root .sw-orb-pet .sw-pet-art { width: 54px; height: 54px; }
+#soundwalk-player-root .sw-orb:hover:not(.sw-dragging) { transform: translateY(-2px); }
+#soundwalk-player-root .sw-orb:active:not(.sw-dragging) { transform: scale(.96); }
+#soundwalk-player-root .sw-orb.sw-open {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+#soundwalk-player-root .sw-orb.sw-dragging {
+  cursor: grabbing;
+  transform: none !important;
+  transition: none !important;
+}
+#soundwalk-player-root .sw-orb-pulse {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  top: 4px;
+  right: 4px;
+  border-radius: 50%;
+  background: #fe9b72;
+  box-shadow: 0 0 0 2px #14252cbf;
+  opacity: 0;
+}
 #soundwalk-player-root .sw-orb.sw-active .sw-orb-pulse { opacity: 1; animation: sw-beat 1.6s ease-in-out infinite; }
 @keyframes sw-beat { 50% { transform: scale(1.5); opacity: .45; } }
-/* The dialog renders in the browser top layer, not beneath SillyTavern skins. */
+/* Non-modal top-layer dialog floats above SillyTavern without disabling the dog head. */
 #soundwalk-player-root dialog.sw-panel {
   position: fixed !important; inset: 8px auto auto 8px !important;
   margin: 0 !important; padding: 0 !important;
@@ -52,7 +106,7 @@
 #soundwalk-player-root dialog.sw-panel:not([open]):not(.sw-fallback-open) { display: none !important; }
 #soundwalk-player-root dialog.sw-panel[open],
 #soundwalk-player-root dialog.sw-panel.sw-fallback-open { display: flex !important; visibility: visible !important; opacity: 1 !important; transform: none !important; }
-#soundwalk-player-root dialog.sw-panel::backdrop { background: rgba(8, 16, 22, .36); }
+#soundwalk-player-root dialog.sw-panel::backdrop { background: transparent; }
 #soundwalk-player-root .sw-header { min-height: 65px; padding: 14px 17px; display:flex; justify-content:space-between; align-items:center; gap:8px; border-bottom:1px solid #ffffff12; }
 #soundwalk-player-root .sw-brand { display:flex; gap:10px; align-items:center; }
 #soundwalk-player-root .sw-brand-dot { width: 23px; height: 23px; background: radial-gradient(circle at 35% 30%, #fff5da, #fdb99a 50%, #eaa474 53%, transparent 55%); border-radius:50%; box-shadow: 0 0 0 3px #d8eee01c; }
@@ -69,9 +123,9 @@
 #soundwalk-player-root .sw-pet-choices {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
 #soundwalk-player-root .sw-pet-choice {display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:6px 8px;border:1px solid #ffffff23!important;border-radius:12px;color:var(--sw-cream);background:#ffffff0c;font-size:12px;text-align:center;}
 #soundwalk-player-root .sw-pet-choice.sw-selected {background:#d9e7c41d;border-color:var(--sw-mint)!important;box-shadow:inset 0 0 0 1px #8fd7b94a;}
-#soundwalk-player-root .sw-pet-thumb {width:38px;height:38px;display:block;flex-shrink:0;border-radius:11px;background:#f5dcb8;}
+#soundwalk-player-root .sw-pet-thumb {width:38px;height:38px;display:block;flex-shrink:0;background:transparent;filter:drop-shadow(0 2px 2px #07151c99);}
 #soundwalk-player-root .sw-pet-thumb .sw-pet-art {width:38px;height:38px;}
-#soundwalk-player-root .sw-pet-choice[data-pet="shepherd"] .sw-pet-thumb {background:#d5d7c0;}
+#soundwalk-player-root .sw-pet-choice[data-pet="shepherd"] .sw-pet-thumb {background:transparent;}
 
 #soundwalk-player-root .sw-now { display:flex; align-items:center; gap:13px; padding:15px 17px 8px; }
 #soundwalk-player-root .sw-scene { width:69px; height:69px; border-radius:15px; position:relative; overflow:hidden; flex-shrink:0; background:linear-gradient(160deg,#466c73,#253f4e 67%,#162833); box-shadow:0 5px 14px #080f1644; }

@@ -7,7 +7,7 @@ const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
 const ORB_EDGE = 8;
-const ORB_SIZE = 46;
+const ORB_SIZE = 56; // Transparent 56px touch target around a 52px pet head.
 const DB_NAME = 'soundwalk-player-audio-v1';
 const DB_STORE = 'tracks';
 
@@ -177,7 +177,7 @@ function init() {
         <button class="sw-icon sw-close" type="button" aria-label="关闭播放器">${icons.close}</button></div>
       </header>
       <section id="soundwalk-pet-settings" class="sw-pet-settings" aria-label="宠物图标设置" hidden>
-        <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是黑猫 · 展开时选你喜欢的小狗</span></div>
+        <div class="sw-pet-info"><strong>宠物图标</strong><span>收起是黑猫头 · 展开是狗狗头 · 头像没有方形底框</span></div>
         <div class="sw-pet-choices" role="group" aria-label="打开时的小狗图标">
           <button class="sw-pet-choice" type="button" data-pet="golden" aria-pressed="true"><span class="sw-pet-thumb">${petIcons.golden}</span><span>金毛小狗</span></button>
           <button class="sw-pet-choice" type="button" data-pet="shepherd" aria-pressed="false"><span class="sw-pet-thumb">${petIcons.shepherd}</span><span>黑背德牧</span></button>
@@ -327,11 +327,11 @@ function init() {
         followCharacter, manualFilter, characterLabels:settings.characterLabels, openPet}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
-  // Native <dialog>.showModal() promotes the player into the browser's
-  // top layer, above theme backdrops, transformed ancestors and max z-index
-  // decorations. This is different from placing another fixed panel inside
-  // the page stacking context.
-  const dialogSupported = typeof panel.showModal === 'function';
+  // A non-modal dialog enters the top layer without inerting the page.
+  // This keeps the actual floating cat/dog head visible and clickable even
+  // while the playlist is open, so tapping the dog head can close it again.
+  // The player stays above SillyTavern themes without a dark modal backdrop.
+  const dialogSupported = typeof panel.show === 'function';
   function isPanelOpen() {
     return (dialogSupported && panel.open) || panel.classList.contains('sw-fallback-open');
   }
@@ -349,36 +349,36 @@ function init() {
     orb.setAttribute('aria-expanded', String(open));
     orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : '打开听风音乐播放器');
   }
-  // Follow the movable note button. Keep the panel inside the screen:
-  // below the note when possible, above it near the bottom, and aligned
-  // with the note itself when neither side has room for the full player.
+  // Follow the movable pet head. Keep the panel inside the screen:
+  // below the head when possible, above it near the bottom, and aligned
+  // with the head itself when neither side has room for the full player.
   // Coordinates are recalculated each time the player opens and on resize.
   function positionPanelNearOrb() {
     if (!isPanelOpen()) return;
-    const gap = 8;
+    const gap = 10;
     const edge = 8;
     const width = window.visualViewport?.width || window.innerWidth;
     const height = window.visualViewport?.height || window.innerHeight;
     const viewportLeft = window.visualViewport?.offsetLeft || 0;
     const viewportTop = window.visualViewport?.offsetTop || 0;
     const orbRect = orb.getBoundingClientRect();
-    const usableHeight = Math.max(160, height - edge * 2);
-    panel.style.setProperty('max-height', `${usableHeight}px`, 'important');
-    // Measure after opening, with the natural content height and responsive width.
+
+    // Keep the little dog fully exposed rather than placing the dialog on top
+    // of it. When there is not room for the entire playlist, shorten the
+    // *scrolling panel* instead of stealing the pet head's hit area.
+    const spaceBelow = Math.max(0, viewportTop + height - edge - (orbRect.bottom + gap));
+    const spaceAbove = Math.max(0, orbRect.top - gap - (viewportTop + edge));
+    const putBelow = spaceBelow >= spaceAbove;
+    const available = putBelow ? spaceBelow : spaceAbove;
+    panel.style.setProperty('max-height', `${Math.max(80, Math.min(680, available))}px`, 'important');
     const rect = panel.getBoundingClientRect();
     const panelWidth = rect.width || Math.min(365, width - edge * 2);
-    const panelHeight = rect.height || Math.min(500, usableHeight);
+    const panelHeight = rect.height || Math.min(500, available);
     const left = clamp(orbRect.left, viewportLeft + edge,
       Math.max(viewportLeft + edge, viewportLeft + width - panelWidth - edge));
-    const below = orbRect.bottom + gap;
-    const above = orbRect.top - panelHeight - gap;
-    const fitsBelow = below + panelHeight <= viewportTop + height - edge;
-    const fitsAbove = above >= viewportTop + edge;
-    const top = fitsBelow ? below : (fitsAbove ? above :
-      clamp(orbRect.top, viewportTop + edge,
-        Math.max(viewportTop + edge, viewportTop + height - panelHeight - edge)));
+    const top = putBelow ? orbRect.bottom + gap : orbRect.top - panelHeight - gap;
     panel.style.setProperty('left', `${Math.round(left)}px`, 'important');
-    panel.style.setProperty('top', `${Math.round(top)}px`, 'important');
+    panel.style.setProperty('top', `${Math.round(clamp(top, viewportTop + edge, viewportTop + height - panelHeight - edge))}px`, 'important');
     panel.style.setProperty('right', 'auto', 'important');
     panel.style.setProperty('bottom', 'auto', 'important');
   }
@@ -386,7 +386,7 @@ function init() {
     if (show === isPanelOpen()) return;
     if (dialogSupported) {
       try {
-        if (show) panel.showModal();
+        if (show) panel.show();
         else panel.close();
       } catch (error) {
         // Keep an accessible fallback if the browser forbids modal dialogs.
