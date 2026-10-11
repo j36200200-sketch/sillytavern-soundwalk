@@ -6,6 +6,8 @@ const ROOT_ID = 'soundwalk-player-root';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
+const ORB_EDGE = 8;
+const ORB_SIZE = 46;
 const DB_NAME = 'soundwalk-player-audio-v1';
 const DB_STORE = 'tracks';
 
@@ -46,7 +48,7 @@ function validateTrack(raw) {
   return { id: cleanText(raw.id, 100) || uid(), title, artist, kind };
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72 };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37} };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -60,7 +62,11 @@ function readSettings() {
       tracks,
       index: Math.max(0, Math.min(tracks.length - 1, Number.isInteger(data.index) ? data.index : 0)),
       mode: ['all', 'one', 'shuffle'].includes(data.mode) ? data.mode : 'all',
-      volume: Number.isFinite(data.volume) ? Math.max(0, Math.min(1, data.volume)) : 0.72
+      volume: Number.isFinite(data.volume) ? Math.max(0, Math.min(1, data.volume)) : 0.72,
+      orbPosition: {
+        x: Number.isFinite(data.orbPosition?.x) ? Math.max(0, Math.min(1, data.orbPosition.x)) : 0,
+        y: Number.isFinite(data.orbPosition?.y) ? Math.max(0, Math.min(1, data.orbPosition.y)) : 0.37
+      }
     };
   } catch { return defaults; }
 }
@@ -97,6 +103,7 @@ function init() {
   let sleepHandle = null;
   let sleepDeadline = 0;
   let editId = null;
+  let orbPosition = {...settings.orbPosition};
   const audio = new Audio();
   audio.preload = 'metadata';
   audio.volume = settings.volume;
@@ -154,6 +161,73 @@ function init() {
   const jsonInput = $('.sw-json-input');
   let messageTimer;
 
+  // Keep the floating control fully inside the current viewport, even after
+  // orientation changes. Coordinates are normalized so they persist on mobile.
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  function viewportRoom() {
+    const width = Math.max(ORB_SIZE + ORB_EDGE * 2, window.innerWidth || document.documentElement.clientWidth);
+    const height = Math.max(ORB_SIZE + ORB_EDGE * 2, window.innerHeight || document.documentElement.clientHeight);
+    return {
+      width: Math.max(0, width - ORB_SIZE - ORB_EDGE * 2),
+      height: Math.max(0, height - ORB_SIZE - ORB_EDGE * 2)
+    };
+  }
+  function setOrbXY(left, top) {
+    const room = viewportRoom();
+    orbPosition = {
+      x: room.width ? clamp((left - ORB_EDGE) / room.width, 0, 1) : 0,
+      y: room.height ? clamp((top - ORB_EDGE) / room.height, 0, 1) : 0
+    };
+    positionOrb();
+  }
+  function positionOrb() {
+    const room = viewportRoom();
+    root.style.setProperty('--sw-orb-left', Math.round(ORB_EDGE + room.width * orbPosition.x) + 'px');
+    root.style.setProperty('--sw-orb-top', Math.round(ORB_EDGE + room.height * orbPosition.y) + 'px');
+  }
+  positionOrb();
+  window.addEventListener('resize', positionOrb);
+
+  // A tap opens the panel. A drag moves the orb without opening the panel.
+  // Pointer events cover both mouse and touchscreen; no separate touch handlers
+  // means a finger gesture cannot accidentally trigger two actions.
+  let drag = null;
+  let lastDragEnd = 0;
+  orb.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    const box = orb.getBoundingClientRect();
+    drag = {id:event.pointerId, startX:event.clientX, startY:event.clientY,
+      left:box.left, top:box.top, moved:false};
+    try { orb.setPointerCapture(event.pointerId); } catch {}
+    event.stopPropagation();
+  });
+  orb.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) > 7) {
+      drag.moved = true;
+      orb.classList.add('sw-dragging');
+    }
+    if (!drag.moved) return;
+    setOrbXY(drag.left + dx, drag.top + dy);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  function finishDrag(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (drag.moved) {
+      lastDragEnd = Date.now();
+      persist();
+    }
+    drag = null;
+    orb.classList.remove('sw-dragging');
+    try { if (orb.hasPointerCapture(event.pointerId)) orb.releasePointerCapture(event.pointerId); } catch {}
+    event.stopPropagation();
+  }
+  orb.addEventListener('pointerup', finishDrag);
+  orb.addEventListener('pointercancel', finishDrag);
+
   function notice(message) {
     const el = $('.sw-notice');
     el.textContent = message;
@@ -163,7 +237,7 @@ function init() {
   }
   function persist() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume}));
+      localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   function showPanel(show) {
@@ -404,7 +478,12 @@ function init() {
     } catch (error) { notice(error.message || '歌单导入失败'); }
     finally { jsonInput.value = ''; }
   });
-  orb.addEventListener('click', () => showPanel(panel.hidden));
+  orb.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (Date.now() - lastDragEnd < 350) return;
+    showPanel(panel.hidden);
+  });
   $('.sw-close').addEventListener('click', () => showPanel(false));
   root.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) showPanel(false); });
   playButton.addEventListener('click', () => audio.paused ? void play() : audio.pause());
