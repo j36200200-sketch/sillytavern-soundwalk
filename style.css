@@ -8,9 +8,11 @@
   --sw-mint: #8fd7b9;
   --sw-peach: #ffbb98;
   color: var(--sw-cream);
-  position: relative;
+  position: fixed !important; inset: 0 !important;
+  width: 100vw !important; height: 100dvh !important;
+  pointer-events: none !important;
   font: 400 14px/1.45 ui-sans-serif, system-ui, -apple-system, 'Noto Sans SC', sans-serif;
-  z-index: 2147481000;
+  z-index: 2147483647 !important;
 }
 #soundwalk-player-root *, #soundwalk-player-root *::before, #soundwalk-player-root *::after { box-sizing: border-box; }
 #soundwalk-player-root [hidden] { display: none !important; }
@@ -18,13 +20,16 @@
 #soundwalk-player-root button { cursor: pointer; border: 0; }
 #soundwalk-player-root button:focus-visible, #soundwalk-player-root input:focus-visible, #soundwalk-player-root select:focus-visible { outline: 2px solid var(--sw-peach); outline-offset: 2px; }
 #soundwalk-player-root .sw-orb {
-  position: fixed; left: max(12px, env(safe-area-inset-left)); top: 38%;
+  position: fixed !important; left: var(--sw-orb-left, 8px) !important; top: var(--sw-orb-top, 38%) !important;
+  right: auto !important; bottom: auto !important; touch-action: none !important;
+  user-select: none; -webkit-user-select: none; pointer-events: auto !important;
   display: grid; place-items: center; width: 46px; height: 46px; border-radius: 16px;
   color: #142c2b; background: linear-gradient(135deg, #d9eabb, #80c8b6);
   box-shadow: 0 6px 24px #041b1c63, inset 0 1px 0 #ffffff9c;
-  z-index: 2147481001; transition: transform .15s;
+  z-index: 2147483647 !important; transition: transform .15s;
 }
 #soundwalk-player-root .sw-orb:hover { transform: translateY(-2px); }
+#soundwalk-player-root .sw-orb.sw-dragging { cursor: grabbing; transform: none !important; transition: none !important; }
 #soundwalk-player-root .sw-orb-pulse { position: absolute; width: 6px; height: 6px; top: 7px; right: 7px; border-radius: 50%; background: #fe9b72; opacity: 0; }
 #soundwalk-player-root .sw-orb.sw-active .sw-orb-pulse { opacity: 1; animation: sw-beat 1.6s ease-in-out infinite; }
 @keyframes sw-beat { 50% { transform: scale(1.5); opacity: .45; } }
@@ -35,7 +40,7 @@
   color: var(--sw-cream); background: linear-gradient(152deg, #24414d 0%, #15252f 45%, #11212b 100%);
   border: 1px solid var(--sw-edge); border-radius: 20px;
   box-shadow: 0 24px 80px #040f16bf, inset 0 1px 0 #ffffff12;
-  z-index: 2147481002;
+  z-index: 2147483647 !important; pointer-events: auto !important;
   backdrop-filter: blur(18px);
 }
 #soundwalk-player-root .sw-header { min-height: 65px; padding: 14px 17px; display:flex; justify-content:space-between; align-items:center; gap:8px; border-bottom:1px solid #ffffff12; }
