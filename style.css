@@ -253,7 +253,6 @@
 }
 #soundwalk-player-root .sw-role-autoplay {accent-color:var(--sw-mint); width:16px; height:16px; margin:0; cursor:pointer;}
 #soundwalk-player-root .sw-role-auto-hint {font-size:10px; line-height:1.4; color:var(--sw-muted);}
-#soundwalk-player-root .sw-role-follow:disabled {opacity:.5;}
 
 /* v1.3.0 - compact mobile search, hidden-not-removed advanced controls. */
 #soundwalk-player-root .sw-search-row {display:flex; gap:6px; align-items:center; padding:4px 15px 9px;}

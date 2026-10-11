@@ -298,7 +298,7 @@ function init() {
       <details class="sw-advanced"><summary>⚙ 角色绑定与歌单设置</summary>
       <section class="sw-roles" aria-label="角色歌单设置">
         <div class="sw-role-line"><span class="sw-role-current">当前角色：识别中</span><label class="sw-role-toggle"><input class="sw-role-follow" type="checkbox" /> 随角色切换歌单</label></div>
-        <div class="sw-role-auto-line"><label class="sw-role-auto-label"><input class="sw-role-autoplay" type="checkbox" /><span>进入角色自动播放</span></label><span class="sw-role-auto-hint">已绑定角色从第一首顺序播放 · 未绑定保持静音</span></div>
+        <div class="sw-role-auto-line"><label class="sw-role-auto-label"><input class="sw-role-autoplay" type="checkbox" /><span>进入角色自动播放</span></label><span class="sw-role-auto-hint">两个开关可任意顺序开启 · 绑定音乐按顺序播放</span></div>
         <div class="sw-role-tools"><label>歌单分组 <select class="sw-role-filter" aria-label="选择歌单分组"><option value="all">全部歌曲</option></select></label><button class="sw-text-button sw-role-manage" type="button" aria-expanded="false">管理角色绑定</button></div>
         <div class="sw-role-manager" hidden><p class="sw-role-hint">勾选歌曲，绑定到当前角色；取消勾选即解除绑定。一首歌可以绑定多个角色。</p><div class="sw-role-bind-items"></div></div>
       </section>
@@ -711,7 +711,8 @@ function init() {
     status.textContent = currentCharacter ? `当前角色：${currentCharacter.name}` : '当前：无单人角色（群聊可手动选分组）';
     status.title = status.textContent;
     $('.sw-role-follow').checked = followCharacter;
-    $('.sw-role-follow').disabled = autoRolePlayback;
+    // Both switches can now be toggled independently and in any order.
+    $('.sw-role-follow').disabled = false;
     $('.sw-role-autoplay').checked = autoRolePlayback;
     const choices = [{key:'all',name:'全部歌曲'}, {key:'unassigned',name:'未绑定歌曲'}];
     const roles = new Set(settings.tracks.flatMap(t => t.bindings || []));
@@ -1388,15 +1389,20 @@ function init() {
     persist();
   });
   $('.sw-role-follow').addEventListener('change', e => {
-    if (autoRolePlayback) { e.target.checked = followCharacter; return; }
-    if (e.target.checked && !currentCharacter) {
-      e.target.checked = false;
-      notice('请先进入一个单人角色聊天');
+    // Allow setting follow before entering a character or while auto plays.
+    followCharacter = e.target.checked;
+    if (autoRolePlayback) {
+      updateRoleView();
+      persist();
+      notice(followCharacter
+        ? '已开启歌单跟随；自动播放期间依然按当前角色顺序播放'
+        : '已关闭歌单跟随；自动播放仍有效，关闭后恢复手动分组');
       return;
     }
-    followCharacter = e.target.checked;
     refreshFilter();
-    notice(followCharacter ? `已开启：跟随「${currentCharacter.name}」` : '已关闭自动跟随，可以自由选分组');
+    notice(followCharacter
+      ? (currentCharacter ? `已开启：跟随「${currentCharacter.name}」` : '歌单跟随已开启：进入角色卡后自动切换')
+      : '已关闭歌单跟随，可以自由选分组');
   });
   roleFilterSelect.addEventListener('change', e => {
     if (followCharacter || autoRolePlayback) return;
