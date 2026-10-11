@@ -109,7 +109,23 @@
 #soundwalk-player-root dialog.sw-panel::backdrop { background: transparent; }
 #soundwalk-player-root .sw-header { min-height: 65px; padding: 14px 17px; display:flex; justify-content:space-between; align-items:center; gap:8px; border-bottom:1px solid #ffffff12; }
 #soundwalk-player-root .sw-brand { display:flex; gap:10px; align-items:center; }
-#soundwalk-player-root .sw-brand-dot { width: 23px; height: 23px; background: radial-gradient(circle at 35% 30%, #fff5da, #fdb99a 50%, #eaa474 53%, transparent 55%); border-radius:50%; box-shadow: 0 0 0 3px #d8eee01c; }
+/* v1.2.6: transparent pressable brand mascot instead of the egg-shaped gradient dot. */
+#soundwalk-player-root .sw-brand-switch {
+  appearance:none!important; -webkit-appearance:none!important; border:0!important;
+  width:30px!important; height:30px!important; min-width:30px!important;
+  padding:0!important; margin:0!important; border-radius:0!important;
+  display:grid!important; place-items:center!important; flex-shrink:0;
+  background:transparent!important; box-shadow:none!important;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation; transition:transform .17s ease;
+}
+#soundwalk-player-root .sw-brand-switch:hover {transform:scale(1.09);}
+#soundwalk-player-root .sw-brand-switch:active {transform:scale(.93);}
+#soundwalk-player-root .sw-brand-switch:focus-visible {outline:2px solid var(--sw-mint);outline-offset:2px;border-radius:6px!important;}
+#soundwalk-player-root .sw-brand-image {
+  display:block!important; width:29px!important; height:29px!important;
+  object-fit:contain; pointer-events:none; user-select:none; -webkit-user-drag:none;
+}
 #soundwalk-player-root .sw-brand strong { display:block; font-size:16px; letter-spacing:.08em; }
 #soundwalk-player-root .sw-brand small { display:block; font-size:10px; letter-spacing:.04em; color:var(--sw-muted); }
 #soundwalk-player-root .sw-icon { flex-shrink:0; width:35px; height:35px; display:inline-flex; align-items:center; justify-content:center; color:var(--sw-cream); border-radius:11px; background:transparent; }

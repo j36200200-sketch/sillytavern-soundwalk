@@ -24,6 +24,11 @@ const icons = {
   mute: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 9H2v6h3l6 5V4zM15 9l6 6m0-6-6 6"/></svg>'
 };
 
+const brandAssets = Object.freeze({
+  cat: new URL('./assets/brand/brand-cat-v126.png', import.meta.url).href,
+  paw: new URL('./assets/brand/brand-paw-v126.png', import.meta.url).href,
+});
+
 const petAssets = Object.freeze({
   cat: new URL('./assets/pets/pet-cat-v123.png', import.meta.url).href,
   golden: new URL('./assets/pets/pet-golden-v123.png', import.meta.url).href,
@@ -64,7 +69,7 @@ function validateTrack(raw) {
   return { id: cleanText(raw.id, 100) || uid(), title, artist, kind, bindings };
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, openPet: 'golden' };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, openPet: 'golden', brandIcon: 'cat' };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -82,6 +87,7 @@ function readSettings() {
       followCharacter: data.followCharacter === true,
       autoRolePlayback: data.autoRolePlayback === true,
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
+      brandIcon: data.brandIcon === 'paw' ? 'paw' : 'cat',
       manualFilter: typeof data.manualFilter === 'string' && data.manualFilter.length <= 320 ? data.manualFilter : 'all',
       characterLabels: Object.fromEntries(Object.entries(data.characterLabels && typeof data.characterLabels === 'object' && !Array.isArray(data.characterLabels) ? data.characterLabels : {})
         .filter(([k,v]) => k.startsWith('avatar:') && k.length <= 310 && typeof v === 'string').slice(0,300)
@@ -177,6 +183,7 @@ function init() {
   let followCharacter = settings.followCharacter;
   let autoRolePlayback = settings.autoRolePlayback;
   let openPet = settings.openPet;
+  let brandIcon = settings.brandIcon;
   let manualFilter = settings.manualFilter;
   let currentCharacter = null;
   let lastRoleSignature = '';
@@ -201,7 +208,7 @@ function init() {
     </button>
     <dialog id="soundwalk-player-modal" class="sw-panel" aria-label="听风播放器">
       <header class="sw-header">
-        <div class="sw-brand"><span class="sw-brand-dot"></span><div><strong>听风</strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
+        <div class="sw-brand"><button class="sw-brand-switch" type="button" aria-label="切换听风的小猫头和猫爪图标" title="点击切换猫头和猫爪"><img class="sw-brand-image" src="${brandAssets[brandIcon]}" alt="" draggable="false" decoding="async" /></button><div><strong>听风</strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
         <div class="sw-header-actions"><button class="sw-icon sw-pet-settings-toggle" type="button" aria-label="宠物图标设置" title="宠物图标设置" aria-expanded="false" aria-controls="soundwalk-pet-settings">🐾</button>
         <button class="sw-icon sw-close" type="button" aria-label="关闭播放器">${icons.close}</button></div>
       </header>
@@ -262,6 +269,22 @@ function init() {
   const roleFilterSelect = $('.sw-role-filter');
   const roleManager = $('.sw-role-manager');
   const roleManagerItems = $('.sw-role-bind-items');
+  // Compact brand mascot (independent from the floating cat/dog button).
+  const brandButton = $('.sw-brand-switch');
+  const brandImage = $('.sw-brand-image');
+  function updateBrandIcon() {
+    brandImage.src = brandAssets[brandIcon];
+    const current = brandIcon === 'cat' ? '小黑猫头' : '粉色猫爪';
+    const next = brandIcon === 'cat' ? '粉色猫爪' : '小黑猫头';
+    brandButton.setAttribute('aria-label', `当前是${current}，点击切换为${next}`);
+    brandButton.title = `当前：${current} · 点击切换为${next}`;
+  }
+  brandButton.addEventListener('click', () => {
+    brandIcon = brandIcon === 'cat' ? 'paw' : 'cat';
+    updateBrandIcon();
+    persist();
+  });
+  updateBrandIcon();
   let messageTimer;
 
   // Keep the floating control fully inside the current viewport, even after
@@ -356,7 +379,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, openPet}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, openPet, brandIcon}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
