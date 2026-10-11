@@ -41,14 +41,17 @@ function validateTrack(raw) {
   const artist = cleanText(raw.artist || '未知歌手', 70);
   const kind = raw.kind === 'file' ? 'file' : 'url';
   if (!title) return null;
+  const bindings = Array.isArray(raw.bindings)
+    ? [...new Set(raw.bindings.filter(x => typeof x === 'string' && x.startsWith('avatar:') && x.length <= 310))].slice(0, 80)
+    : [];
   if (kind === 'url') {
     const src = safeUrl(raw.src);
-    return src ? { id: cleanText(raw.id, 100) || uid(), title, artist, kind, src } : null;
+    return src ? { id: cleanText(raw.id, 100) || uid(), title, artist, kind, src, bindings } : null;
   }
-  return { id: cleanText(raw.id, 100) || uid(), title, artist, kind };
+  return { id: cleanText(raw.id, 100) || uid(), title, artist, kind, bindings };
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37} };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, manualFilter: 'all', characterLabels: {} };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -63,6 +66,11 @@ function readSettings() {
       index: Math.max(0, Math.min(tracks.length - 1, Number.isInteger(data.index) ? data.index : 0)),
       mode: ['all', 'one', 'shuffle'].includes(data.mode) ? data.mode : 'all',
       volume: Number.isFinite(data.volume) ? Math.max(0, Math.min(1, data.volume)) : 0.72,
+      followCharacter: data.followCharacter === true,
+      manualFilter: typeof data.manualFilter === 'string' && data.manualFilter.length <= 320 ? data.manualFilter : 'all',
+      characterLabels: Object.fromEntries(Object.entries(data.characterLabels && typeof data.characterLabels === 'object' && !Array.isArray(data.characterLabels) ? data.characterLabels : {})
+        .filter(([k,v]) => k.startsWith('avatar:') && k.length <= 310 && typeof v === 'string').slice(0,300)
+        .map(([k,v]) => [k, cleanText(v,70)])),
       orbPosition: {
         x: Number.isFinite(data.orbPosition?.x) ? Math.max(0, Math.min(1, data.orbPosition.x)) : 0,
         y: Number.isFinite(data.orbPosition?.y) ? Math.max(0, Math.min(1, data.orbPosition.y)) : 0.37
@@ -104,6 +112,11 @@ function init() {
   let sleepDeadline = 0;
   let editId = null;
   let orbPosition = {...settings.orbPosition};
+  let followCharacter = settings.followCharacter;
+  let manualFilter = settings.manualFilter;
+  let currentCharacter = null;
+  let lastRoleSignature = '';
+  let manageBindingsOpen = false;
   const audio = new Audio();
   audio.preload = 'metadata';
   audio.volume = settings.volume;
@@ -137,6 +150,11 @@ function init() {
       </div>
       <div class="sw-volume-row"><span>音量</span><input class="sw-volume" aria-label="音量" type="range" min="0" max="100" value="72"/><label for="sw-sleep-select">定时停止</label><select id="sw-sleep-select" class="sw-sleep" aria-label="定时停止"><option value="0">关闭</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option></select></div>
       <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button></div></div>
+      <section class="sw-roles" aria-label="角色歌单设置">
+        <div class="sw-role-line"><span class="sw-role-current">当前角色：识别中</span><label class="sw-role-toggle"><input class="sw-role-follow" type="checkbox" /> 随角色切换歌单</label></div>
+        <div class="sw-role-tools"><label>歌单分组 <select class="sw-role-filter" aria-label="选择歌单分组"><option value="all">全部歌曲</option></select></label><button class="sw-text-button sw-role-manage" type="button" aria-expanded="false">管理角色绑定</button></div>
+        <div class="sw-role-manager" hidden><p class="sw-role-hint">勾选歌曲，绑定到当前角色；取消勾选即解除绑定。一首歌可以绑定多个角色。</p><div class="sw-role-bind-items"></div></div>
+      </section>
       <ol class="sw-list" aria-label="播放列表"></ol>
       <div class="sw-form" hidden>
         <label>歌名<input class="sw-name" type="text" maxlength="90" placeholder="例如：夜航"/></label>
@@ -159,6 +177,9 @@ function init() {
   const playButton = $('.sw-main-play');
   const fileInput = $('.sw-file-input');
   const jsonInput = $('.sw-json-input');
+  const roleFilterSelect = $('.sw-role-filter');
+  const roleManager = $('.sw-role-manager');
+  const roleManagerItems = $('.sw-role-bind-items');
   let messageTimer;
 
   // Keep the floating control fully inside the current viewport, even after
@@ -182,8 +203,8 @@ function init() {
   }
   function positionOrb() {
     const room = viewportRoom();
-    root.style.setProperty('--sw-orb-left', Math.round(ORB_EDGE + room.width * orbPosition.x) + 'px');
-    root.style.setProperty('--sw-orb-top', Math.round(ORB_EDGE + room.height * orbPosition.y) + 'px');
+    root.style.setProperty('--sw-orb-left', `${Math.round(ORB_EDGE + room.width * orbPosition.x)}px`);
+    root.style.setProperty('--sw-orb-top', `${Math.round(ORB_EDGE + room.height * orbPosition.y)}px`);
   }
   positionOrb();
   window.addEventListener('resize', () => {
@@ -205,8 +226,8 @@ function init() {
     const box = orb.getBoundingClientRect();
     drag = {id:event.pointerId, startX:event.clientX, startY:event.clientY,
       left:box.left, top:box.top, moved:false};
-    // Touchscreens capture touch pointers automatically. Only capture explicitly
-    // once a drag starts: capturing taps can prevent the synthetic click.
+    // Touchscreen browsers provide implicit capture; request explicit capture
+    // only after a drag has started. Capturing simple taps can suppress click.
     event.stopPropagation();
   });
   orb.addEventListener('pointermove', event => {
@@ -233,8 +254,8 @@ function init() {
       lastDragEnd = Date.now();
       persist();
     } else if (!cancelled) {
-      // Toggle directly on pointerup: some Android browsers omit click after
-      // gesture interception or pointer capture.
+      // Open directly on pointerup. Some Android WebViews/browsers don't send
+      // the follow-up click after pointer capture or gesture interception.
       lastPointerTapAt = Date.now();
       showPanel(!isPanelOpen());
     }
@@ -252,11 +273,14 @@ function init() {
   }
   function persist() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition}));
+      localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
+        followCharacter, manualFilter, characterLabels:settings.characterLabels}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
-  // The native modal dialog goes into the browser top layer, so a
-  // SillyTavern theme cannot cover it using ordinary z-index stacking.
+  // Native <dialog>.showModal() promotes the player into the browser's
+  // top layer, above theme backdrops, transformed ancestors and max z-index
+  // decorations. This is different from placing another fixed panel inside
+  // the page stacking context.
   const dialogSupported = typeof panel.showModal === 'function';
   function isPanelOpen() {
     return (dialogSupported && panel.open) || panel.classList.contains('sw-fallback-open');
@@ -267,8 +291,10 @@ function init() {
     orb.setAttribute('aria-expanded', String(open));
     orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : '打开听风音乐播放器');
   }
-  // Follow the movable note button. Prefer below it, flip above when necessary,
-  // and align with its top edge if neither direction fits without clipping.
+  // Follow the movable note button. Keep the panel inside the screen:
+  // below the note when possible, above it near the bottom, and aligned
+  // with the note itself when neither side has room for the full player.
+  // Coordinates are recalculated each time the player opens and on resize.
   function positionPanelNearOrb() {
     if (!isPanelOpen()) return;
     const gap = 8;
@@ -279,7 +305,8 @@ function init() {
     const viewportTop = window.visualViewport?.offsetTop || 0;
     const orbRect = orb.getBoundingClientRect();
     const usableHeight = Math.max(160, height - edge * 2);
-    panel.style.setProperty('max-height', usableHeight + 'px', 'important');
+    panel.style.setProperty('max-height', `${usableHeight}px`, 'important');
+    // Measure after opening, with the natural content height and responsive width.
     const rect = panel.getBoundingClientRect();
     const panelWidth = rect.width || Math.min(365, width - edge * 2);
     const panelHeight = rect.height || Math.min(500, usableHeight);
@@ -292,8 +319,8 @@ function init() {
     const top = fitsBelow ? below : (fitsAbove ? above :
       clamp(orbRect.top, viewportTop + edge,
         Math.max(viewportTop + edge, viewportTop + height - panelHeight - edge)));
-    panel.style.setProperty('left', Math.round(left) + 'px', 'important');
-    panel.style.setProperty('top', Math.round(top) + 'px', 'important');
+    panel.style.setProperty('left', `${Math.round(left)}px`, 'important');
+    panel.style.setProperty('top', `${Math.round(top)}px`, 'important');
     panel.style.setProperty('right', 'auto', 'important');
     panel.style.setProperty('bottom', 'auto', 'important');
   }
@@ -304,7 +331,7 @@ function init() {
         if (show) panel.showModal();
         else panel.close();
       } catch (error) {
-        // Fallback if the browser prevents top-layer modal presentation.
+        // Keep an accessible fallback if the browser forbids modal dialogs.
         panel.classList.toggle('sw-fallback-open', show);
         panel.hidden = !show;
       }
@@ -315,11 +342,17 @@ function init() {
     syncPanelState();
     if (show) {
       positionPanelNearOrb();
+      // A following frame accounts for dynamic font sizing / top-layer layout.
       requestAnimationFrame(positionPanelNearOrb);
     }
     const focusTarget = show ? $('.sw-close') : orb;
     try { focusTarget.focus({preventScroll:true}); }
     catch { focusTarget.focus(); }
+  }
+  // Forms and binding manager can change modal height after it opens.
+  // Reposition whenever its box changes so controls never fall below screen.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => { if (isPanelOpen()) requestAnimationFrame(positionPanelNearOrb); }).observe(panel);
   }
   panel.addEventListener('cancel', event => {
     event.preventDefault();
@@ -342,11 +375,126 @@ function init() {
     $('.sw-mode').setAttribute('aria-label', `${labels[mode]}，点击切换播放模式`);
     $('.sw-mode').title = labels[mode];
   }
+  // SillyTavern characterId is only an array index, not a permanent ID.
+  // Avatar filename is normally stable for the installed character card.
+  // All associations stay inside Soundwalk storage, not character card data.
+  function getActiveCharacter() {
+    try {
+      const ctx = globalThis.SillyTavern?.getContext?.();
+      const id = ctx?.characterId;
+      if (id === undefined || id === null || id === '' || ctx?.groupId !== undefined && ctx.groupId !== null) return null;
+      const character = ctx.characters?.[id];
+      const avatar = typeof character?.avatar === 'string' ? character.avatar : '';
+      if (!avatar) return null;
+      return { key: `avatar:${avatar}`, name:cleanText(character.name || character.data?.name || '未命名角色',70) };
+    } catch {return null;}
+  }
+  function roleFilterKey() {
+    return followCharacter ? (currentCharacter ? currentCharacter.key : 'all') : manualFilter;
+  }
+  function visibleIndices() {
+    const key = roleFilterKey();
+    return settings.tracks.flatMap((track,index) => {
+      const bindings = track.bindings || [];
+      const visible = key === 'all' || (key === 'unassigned' ? !bindings.length : bindings.includes(key));
+      return visible ? [index] : [];
+    });
+  }
+  function updateRoleView() {
+    const status = $('.sw-role-current');
+    status.textContent = currentCharacter ? `当前角色：${currentCharacter.name}` : '当前：无单人角色（群聊可手动选分组）';
+    status.title = status.textContent;
+    $('.sw-role-follow').checked = followCharacter;
+    const choices = [{key:'all',name:'全部歌曲'}, {key:'unassigned',name:'未绑定歌曲'}];
+    const roles = new Set(settings.tracks.flatMap(t => t.bindings || []));
+    if (currentCharacter) roles.add(currentCharacter.key);
+    for(const key of roles) choices.push({key,name:settings.characterLabels[key] || (currentCharacter?.key === key ? currentCharacter.name : '未知角色')});
+    const selected = roleFilterKey();
+    roleFilterSelect.replaceChildren();
+    choices.forEach(c => {
+      const option = document.createElement('option');
+      option.value = c.key;
+      option.textContent = c.key === 'all' || c.key === 'unassigned' ? c.name : `🎵 ${c.name}`;
+      roleFilterSelect.append(option);
+    });
+    if (!choices.some(c=>c.key===selected)) {
+      const option = document.createElement('option');
+      option.value = selected; option.textContent = settings.characterLabels[selected] || '曾经绑定的角色';
+      roleFilterSelect.append(option);
+    }
+    roleFilterSelect.value = selected;
+    roleFilterSelect.disabled = followCharacter;
+    roleFilterSelect.title = followCharacter ? '关闭随角色切换后可自由查看分组' : '选择要查看的歌单分组';
+    $('.sw-role-manage').textContent = manageBindingsOpen ? '收起绑定管理' : '管理角色绑定';
+    $('.sw-role-manage').setAttribute('aria-expanded', String(manageBindingsOpen));
+    roleManager.hidden = !manageBindingsOpen;
+    if (manageBindingsOpen) renderBindingManager();
+  }
+  function renderBindingManager() {
+    roleManagerItems.replaceChildren();
+    if (!currentCharacter) {
+      const message = document.createElement('p');
+      message.textContent = '请先进入一个单人角色聊天，再管理绑定。';
+      roleManagerItems.append(message); return;
+    }
+    if (!settings.tracks.length) {
+      const message = document.createElement('p');
+      message.textContent = '先添加歌曲，然后可以在这里勾选。';
+      roleManagerItems.append(message); return;
+    }
+    settings.tracks.forEach(track => {
+      const label = document.createElement('label');
+      label.className = 'sw-role-bind-row';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = (track.bindings || []).includes(currentCharacter.key);
+      input.setAttribute('aria-label', `将 ${track.title} 绑定到 ${currentCharacter.name}`);
+      input.addEventListener('change', () => toggleTrackBinding(track.id, input.checked));
+      const title = document.createElement('span');
+      title.textContent = `${track.title} · ${track.artist}`;
+      label.append(input, title);
+      roleManagerItems.append(label);
+    });
+  }
+  function toggleTrackBinding(id, bound) {
+    if (!currentCharacter) {notice('请先打开单人角色聊天'); return;}
+    const track = settings.tracks.find(t => t.id === id);
+    if (!track) return;
+    const old = track.bindings || [];
+    track.bindings = bound ? [...new Set([...old,currentCharacter.key])] : old.filter(k => k !== currentCharacter.key);
+    settings.characterLabels[currentCharacter.key] = currentCharacter.name;
+    refreshFilter();
+    notice(bound ? `已绑定到「${currentCharacter.name}」` : `已解除「${currentCharacter.name}」的绑定`);
+  }
+  function refreshFilter() {
+    const visible = visibleIndices();
+    if (!visible.includes(currentIndex)) void selectTrack(visible[0] ?? -1, false);
+    else {renderList(); persist();}
+  }
+  function syncActiveCharacter() {
+    const role = getActiveCharacter();
+    const signature = `${role?.key || ''}|${role?.name || ''}`;
+    if (lastRoleSignature === signature) return;
+    lastRoleSignature = signature;
+    currentCharacter = role;
+    if (role) settings.characterLabels[role.key] = role.name;
+    if (followCharacter) refreshFilter();
+    else {renderList();persist();}
+  }
+  function subscribeCharacterEvents() {
+    const ctx = globalThis.SillyTavern?.getContext?.();
+    if (!ctx?.eventSource?.on || !ctx?.event_types) return;
+    for (const type of ['CHAT_CHANGED','CHARACTER_EDITED','CHARACTER_DELETED','APP_READY']) {
+      const event = ctx.event_types[type];
+      if (event) ctx.eventSource.on(event, () => syncActiveCharacter());
+    }
+  }
   function renderNow() {
-    const track = settings.tracks[currentIndex];
-    $('.sw-title').textContent = track ? track.title : '歌单还是空的';
+    const visible = visibleIndices();
+    const track = visible.includes(currentIndex) ? settings.tracks[currentIndex] : null;
+    $('.sw-title').textContent = track ? track.title : (settings.tracks.length ? '当前分组暂无歌曲' : '歌单还是空的');
     $('.sw-artist').textContent = track ? `${track.artist} · ${track.kind === 'file' ? '本地音频' : '网络音频'}` : '添加链接或本地音频开始播放';
-    $('.sw-count').textContent = String(settings.tracks.length);
+    $('.sw-count').textContent = `${visible.length}/${settings.tracks.length}`;
   }
   function actionBtn(label, title, handler) {
     const btn = document.createElement('button');
@@ -360,7 +508,8 @@ function init() {
   }
   function renderList() {
     list.replaceChildren();
-    settings.tracks.forEach((track, index) => {
+    visibleIndices().forEach(index => {
+      const track = settings.tracks[index];
       const item = document.createElement('li');
       item.className = 'sw-track';
       if (index === currentIndex) item.classList.add('sw-current');
@@ -372,11 +521,19 @@ function init() {
       trackName.className = 'sw-track-name';
       trackName.textContent = track.title;
       const sub = document.createElement('small');
-      sub.textContent = `${track.artist} · ${track.kind === 'file' ? '本地' : '链接'}`;
+      sub.textContent = `${track.artist} · ${track.kind === 'file' ? '本地' : '链接'} · ${(track.bindings || []).length ? `已绑定${track.bindings.length}个角色` : '未绑定'}`;
       select.append(trackName, sub);
       select.addEventListener('click', () => selectTrack(index, true));
       const actions = document.createElement('div');
       actions.className = 'sw-track-actions';
+      if (currentCharacter) {
+        const assigned = (track.bindings || []).includes(currentCharacter.key);
+        const bindingButton = actionBtn(assigned ? '♥' : '♡', `${assigned ? '取消' : '绑定'}「${currentCharacter.name}」的歌曲 ${track.title}`,
+          () => toggleTrackBinding(track.id, !assigned));
+        bindingButton.classList.toggle('sw-bound', assigned);
+        bindingButton.setAttribute('aria-pressed', String(assigned));
+        actions.append(bindingButton);
+      }
       if (track.kind === 'url') {
         actions.append(actionBtn('✎', `编辑 ${track.title}`, () => editTrack(track.id)));
       }
@@ -384,13 +541,16 @@ function init() {
       item.append(select, actions);
       list.append(item);
     });
-    if (!settings.tracks.length) {
+    if (!visibleIndices().length) {
       const empty = document.createElement('li');
       empty.className = 'sw-empty';
-      empty.textContent = '还没有歌曲。你可以添加合法音频直链，也可以选择手机上的音频文件。';
+      empty.textContent = !settings.tracks.length
+        ? '还没有歌曲。你可以添加合法音频直链，也可以选择手机上的音频文件。'
+        : '这个分组还没有歌曲。关闭「随角色切换」查看全部，再点击♡绑定，或使用「管理角色绑定」批量勾选。';
       list.append(empty);
     }
     renderNow();
+    updateRoleView();
   }
   function resetProgress() {
     seek.value = '0';
@@ -398,7 +558,7 @@ function init() {
     $('.sw-duration').textContent = '0:00';
   }
   async function selectTrack(index, shouldPlay = false) {
-    const nextTrack = settings.tracks[index];
+    const nextTrack = visibleIndices().includes(index) ? settings.tracks[index] : null;
     const seq = ++playSequence;
     audio.pause();
     audio.removeAttribute('src');
@@ -427,22 +587,26 @@ function init() {
     }
   }
   async function play() {
-    if (!settings.tracks.length) { notice('请先添加歌曲'); return; }
+    const visible = visibleIndices();
+    if (!visible.length) { notice('当前分组没有歌曲，请先绑定或切换分组'); return; }
+    if (!visible.includes(currentIndex)) {await selectTrack(visible[0], true); return;}
     if (!audio.src) { await selectTrack(currentIndex, true); return; }
     try { await audio.play(); }
     catch { notice('无法播放：检查链接、音频格式或浏览器播放限制'); }
     renderTransport();
   }
   function nextIndex(direction) {
-    const length = settings.tracks.length;
-    if (!length) return -1;
-    if (mode === 'shuffle' && length > 1) {
-      return (currentIndex + 1 + Math.floor(Math.random() * (length - 1))) % length;
+    const indices = visibleIndices();
+    if (!indices.length) return -1;
+    if (mode === 'shuffle' && indices.length > 1) {
+      const candidates = indices.filter(index => index !== currentIndex);
+      return candidates[Math.floor(Math.random() * candidates.length)];
     }
-    return (currentIndex + direction + length) % length;
+    const index = indices.indexOf(currentIndex);
+    return indices[(index + direction + indices.length) % indices.length];
   }
   function advance(direction, fromEnded = false) {
-    if (!settings.tracks.length) return;
+    if (!visibleIndices().length) return;
     if (fromEnded && mode === 'one') {
       audio.currentTime = 0;
       void play();
@@ -457,6 +621,7 @@ function init() {
     $('.sw-url').value = track?.src || '';
     $('.sw-save').textContent = track ? '保存修改' : '添加歌曲';
     form.hidden = false;
+    requestAnimationFrame(positionPanelNearOrb);
     $('.sw-name').focus();
   }
   function hideForm() {
@@ -478,8 +643,9 @@ function init() {
     const wasCurrent = index === currentIndex;
     if (index < currentIndex) currentIndex -= 1;
     if (wasCurrent || currentIndex >= settings.tracks.length) {
-      void selectTrack(Math.min(currentIndex, settings.tracks.length - 1), false);
-    } else { renderList(); persist(); }
+      currentIndex = -1;
+    }
+    refreshFilter();
   }
   $('.sw-save').addEventListener('click', () => {
     const title = cleanText($('.sw-name').value);
@@ -494,10 +660,10 @@ function init() {
       if (idx === currentIndex) void selectTrack(idx, false);
     } else {
       const wasEmpty = settings.tracks.length === 0;
-      settings.tracks.push({ id: uid(), kind: 'url', title, artist, src });
+      settings.tracks.push({ id: uid(), kind: 'url', title, artist, src, bindings: followCharacter && currentCharacter ? [currentCharacter.key] : [] });
       if (wasEmpty) void selectTrack(0, false);
     }
-    hideForm(); renderList(); persist(); notice('歌曲已保存');
+    hideForm(); refreshFilter(); notice('歌曲已保存');
   });
   $('.sw-add-link').addEventListener('click', () => showForm());
   $('.sw-cancel').addEventListener('click', hideForm);
@@ -515,25 +681,25 @@ function init() {
         await fileAction('put', id, file);
         const title = cleanText(file.name.replace(/\.[^.]+$/, '')) || '本地音频';
         const wasEmpty = settings.tracks.length === 0;
-        settings.tracks.push({id, kind:'file', title, artist:'本地文件'});
+        settings.tracks.push({id, kind:'file', title, artist:'本地文件', bindings: followCharacter && currentCharacter ? [currentCharacter.key] : []});
         added += 1;
         if (wasEmpty) void selectTrack(0, false);
       } catch { notice(`无法保存 ${file.name}：可能存储空间不足`); }
     }
     fileInput.value = '';
-    renderList(); persist();
+    refreshFilter();
     if (added) notice(`已导入 ${added} 首本地音频`);
   });
   $('.sw-export').addEventListener('click', () => {
-    const tracks = settings.tracks.filter(item => item.kind === 'url').map(({title, artist, src}) => ({title, artist, src}));
-    const data = {format:'soundwalk-playlist', version:1, tracks};
+    const tracks = settings.tracks.filter(item => item.kind === 'url').map(({title, artist, src, bindings}) => ({title, artist, src, bindings}));
+    const data = {format:'soundwalk-playlist', version:2, characterLabels:settings.characterLabels, tracks};
     const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url; link.download = '听风-网络歌单.json';
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notice('已导出网络歌单；本地音频文件不会包含在 JSON 中');
+    notice('已导出网络歌单和绑定；分享 JSON 前请注意内含角色名称，本地音频文件不包含');
   });
   $('.sw-import').addEventListener('click', () => jsonInput.click());
   jsonInput.addEventListener('change', async () => {
@@ -545,24 +711,56 @@ function init() {
       if (data?.format !== 'soundwalk-playlist' || !Array.isArray(data?.tracks)) {
         throw new Error('不是听风歌单 JSON 文件');
       }
-      const existing = new Set(settings.tracks.filter(t => t.kind === 'url').map(t => t.src));
-      let count = 0;
-      for (const item of data.tracks) {
-        if (settings.tracks.length >= MAX_TRACKS) break;
-        const parsed = validateTrack({ ...item, kind:'url', id: uid() });
-        if (!parsed || existing.has(parsed.src)) continue;
-        settings.tracks.push(parsed); existing.add(parsed.src); count++;
+      if (data.version === 2 && data.characterLabels && typeof data.characterLabels === 'object') {
+        for(const [key,name] of Object.entries(data.characterLabels).slice(0,300)) {
+          if (key.startsWith('avatar:') && key.length<=310 && typeof name === 'string') settings.characterLabels[key] = cleanText(name,70);
+        }
       }
-      if (settings.tracks.length && !audio.src) void selectTrack(currentIndex, false);
-      renderList(); persist(); notice(`已导入 ${count} 首网络歌曲`);
+      const existing = new Map(settings.tracks.filter(t => t.kind === 'url').map(t => [t.src,t]));
+      let count = 0;
+      let rebound = 0;
+      for (const item of data.tracks.slice(0, MAX_TRACKS)) {
+        const parsed = validateTrack({ ...item, kind:'url', id: uid() });
+        if (!parsed) continue;
+        const duplicate = existing.get(parsed.src);
+        if (duplicate) {
+          const oldCount = (duplicate.bindings || []).length;
+          duplicate.bindings = [...new Set([...(duplicate.bindings || []), ...parsed.bindings])];
+          if (duplicate.bindings.length > oldCount) rebound++;
+          continue;
+        }
+        if (settings.tracks.length >= MAX_TRACKS) break;
+        settings.tracks.push(parsed); existing.set(parsed.src,parsed); count++;
+      }
+      refreshFilter(); notice(`已导入 ${count} 首网络歌曲，更新 ${rebound} 首的角色绑定`);
     } catch (error) { notice(error.message || '歌单导入失败'); }
     finally { jsonInput.value = ''; }
+  });
+  $('.sw-role-follow').addEventListener('change', e => {
+    if (e.target.checked && !currentCharacter) {
+      e.target.checked = false;
+      notice('请先进入一个单人角色聊天');
+      return;
+    }
+    followCharacter = e.target.checked;
+    refreshFilter();
+    notice(followCharacter ? `已开启：跟随「${currentCharacter.name}」` : '已关闭自动跟随，可以自由选分组');
+  });
+  roleFilterSelect.addEventListener('change', e => {
+    if (followCharacter) return;
+    manualFilter = e.target.value;
+    refreshFilter();
+  });
+  $('.sw-role-manage').addEventListener('click', () => {
+    manageBindingsOpen = !manageBindingsOpen;
+    updateRoleView();
+    requestAnimationFrame(positionPanelNearOrb);
   });
   orb.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
-    // Fallback for keyboard and browsers without Pointer Events, without
-    // double-toggling after an already handled pointerup.
+    // Pointerup already handled taps. Keep click for keyboard activation and
+    // older browsers that don't expose Pointer Events, but never double-toggle.
     if (event.detail !== 0 && Date.now() - lastPointerTapAt < 750) return;
     if (event.detail !== 0 && Date.now() - lastDragEnd < 750) return;
     showPanel(!isPanelOpen());
@@ -610,9 +808,15 @@ function init() {
     if (audio.src) notice('音频加载失败：该链接可能已过期或格式不支持');
     renderTransport();
   });
-  // Preserve playback when switching chats: this extension is mounted once per page.
+  // Per-character associations are local to the player's browser, and
+  // switching chats updates the active view without rewriting any cards.
+  subscribeCharacterEvents();
+  syncActiveCharacter();
   renderTransport(); renderList();
-  if (settings.tracks.length) void selectTrack(currentIndex, false);
+  if (visibleIndices().length) void selectTrack(visibleIndices().includes(currentIndex) ? currentIndex : visibleIndices()[0], false);
+  else currentIndex = -1;
+  // Some extensions initialize before ST has populated its active chat.
+  for (const delay of [350, 1200, 3000]) setTimeout(syncActiveCharacter, delay);
   // Mobile browsers may pause sound when placed in the background; the extension cannot override OS policy.
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true});
