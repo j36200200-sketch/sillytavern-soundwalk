@@ -186,7 +186,13 @@ function init() {
     root.style.setProperty('--sw-orb-top', Math.round(ORB_EDGE + room.height * orbPosition.y) + 'px');
   }
   positionOrb();
-  window.addEventListener('resize', positionOrb);
+  window.addEventListener('resize', () => {
+    positionOrb();
+    if (isPanelOpen()) requestAnimationFrame(positionPanelNearOrb);
+  });
+  window.visualViewport?.addEventListener('resize', () => {
+    if (isPanelOpen()) requestAnimationFrame(positionPanelNearOrb);
+  });
 
   // A tap opens the panel. A drag moves the orb without opening the panel.
   // Pointer events cover both mouse and touchscreen; no separate touch handlers
@@ -261,6 +267,36 @@ function init() {
     orb.setAttribute('aria-expanded', String(open));
     orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : '打开听风音乐播放器');
   }
+  // Follow the movable note button. Prefer below it, flip above when necessary,
+  // and align with its top edge if neither direction fits without clipping.
+  function positionPanelNearOrb() {
+    if (!isPanelOpen()) return;
+    const gap = 8;
+    const edge = 8;
+    const width = window.visualViewport?.width || window.innerWidth;
+    const height = window.visualViewport?.height || window.innerHeight;
+    const viewportLeft = window.visualViewport?.offsetLeft || 0;
+    const viewportTop = window.visualViewport?.offsetTop || 0;
+    const orbRect = orb.getBoundingClientRect();
+    const usableHeight = Math.max(160, height - edge * 2);
+    panel.style.setProperty('max-height', usableHeight + 'px', 'important');
+    const rect = panel.getBoundingClientRect();
+    const panelWidth = rect.width || Math.min(365, width - edge * 2);
+    const panelHeight = rect.height || Math.min(500, usableHeight);
+    const left = clamp(orbRect.left, viewportLeft + edge,
+      Math.max(viewportLeft + edge, viewportLeft + width - panelWidth - edge));
+    const below = orbRect.bottom + gap;
+    const above = orbRect.top - panelHeight - gap;
+    const fitsBelow = below + panelHeight <= viewportTop + height - edge;
+    const fitsAbove = above >= viewportTop + edge;
+    const top = fitsBelow ? below : (fitsAbove ? above :
+      clamp(orbRect.top, viewportTop + edge,
+        Math.max(viewportTop + edge, viewportTop + height - panelHeight - edge)));
+    panel.style.setProperty('left', Math.round(left) + 'px', 'important');
+    panel.style.setProperty('top', Math.round(top) + 'px', 'important');
+    panel.style.setProperty('right', 'auto', 'important');
+    panel.style.setProperty('bottom', 'auto', 'important');
+  }
   function showPanel(show) {
     if (show === isPanelOpen()) return;
     if (dialogSupported) {
@@ -277,6 +313,10 @@ function init() {
       panel.hidden = !show;
     }
     syncPanelState();
+    if (show) {
+      positionPanelNearOrb();
+      requestAnimationFrame(positionPanelNearOrb);
+    }
     const focusTarget = show ? $('.sw-close') : orb;
     try { focusTarget.focus({preventScroll:true}); }
     catch { focusTarget.focus(); }
