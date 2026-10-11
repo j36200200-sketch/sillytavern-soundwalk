@@ -10,6 +10,8 @@ const ORB_EDGE = 8;
 const ORB_SIZE = 56; // Transparent 56px touch target around a 52px pet head.
 const DB_NAME = 'soundwalk-player-audio-v1';
 const DB_STORE = 'tracks';
+const COVER_STORE = 'covers';
+const COVER_MAX_BYTES = 12 * 1024 * 1024;
 
 const icons = {
   music: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
@@ -93,8 +95,13 @@ function readSettings() {
 function openAudioDb() {
   return new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) return reject(new Error('浏览器不支持本地音频存储'));
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(DB_STORE);
+    // IndexedDB v2 adds a separate artwork store; the original audio store is untouched.
+    const request = indexedDB.open(DB_NAME, 2);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+      if (!db.objectStoreNames.contains(COVER_STORE)) db.createObjectStore(COVER_STORE);
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('无法打开音频库'));
   });
@@ -110,6 +117,48 @@ async function fileAction(type, key, value) {
       tx.onerror = () => reject(tx.error || new Error('本地存储事务失败'));
     });
   } finally { db.close(); }
+}
+// Covers live in IndexedDB as blobs, keyed by the existing track ID.
+// They never enter localStorage (which also stores the user's song list).
+async function coverAction(type, key, value) {
+  const db = await openAudioDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(COVER_STORE, type === 'get' ? 'readonly' : 'readwrite');
+      const store = transaction.objectStore(COVER_STORE);
+      const request = type === 'put' ? store.put(value, key) : store[type](key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('封面读写失败'));
+      transaction.onerror = () => reject(transaction.error || new Error('封面存储事务失败'));
+    });
+  } finally { db.close(); }
+}
+async function makeCoverBlob(file) {
+  if (!file || file.size > COVER_MAX_BYTES) throw new Error('封面图片不能超过12MB');
+  if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) throw new Error('请选择 JPG、PNG、WebP 或 GIF 图片');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('这张图片无法读取，请换一张 JPG 或 PNG'));
+      img.src = url;
+    });
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('图片尺寸无效');
+    // Resize once to a 512px square JPEG: efficient for phone storage and thumbnails.
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('浏览器不支持图片处理');
+    ctx.fillStyle = '#f5efe0';
+    ctx.fillRect(0, 0, 512, 512);
+    const source = Math.min(img.naturalWidth, img.naturalHeight);
+    ctx.drawImage(img, (img.naturalWidth - source) / 2, (img.naturalHeight - source) / 2,
+      source, source, 0, 0, 512, 512);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .86));
+    if (!(blob instanceof Blob)) throw new Error('封面图片转换失败');
+    return blob;
+  } finally { URL.revokeObjectURL(url); }
 }
 
 function init() {
@@ -130,6 +179,13 @@ function init() {
   let currentCharacter = null;
   let lastRoleSignature = '';
   let manageBindingsOpen = false;
+  let coverTargetId = null;
+  const coverUrls = new Map(); // track ID -> object URL, or null for default artwork
+  const coverPending = new Set();
+  const coverQueue = [];
+  let activeCoverReads = 0;
+  const coverBusy = new Set();
+  const coverRevision = new Map();
   const audio = new Audio();
   audio.preload = 'metadata';
   audio.volume = settings.volume;
@@ -155,8 +211,8 @@ function init() {
         </div>
       </section>
       <div class="sw-now">
-        <div class="sw-scene" aria-hidden="true"><span class="sw-sun"></span><span class="sw-hill sw-hill-a"></span><span class="sw-hill sw-hill-b"></span><span class="sw-stars">✧</span></div>
-        <div class="sw-now-title"><strong class="sw-title">歌单还是空的</strong><span class="sw-artist">添加链接或本地音频开始播放</span></div>
+        <div class="sw-scene" aria-hidden="true"><span class="sw-sun"></span><span class="sw-hill sw-hill-a"></span><span class="sw-hill sw-hill-b"></span><span class="sw-stars">✧</span><img class="sw-now-cover" alt="" hidden /></div>
+        <div class="sw-now-title"><strong class="sw-title">歌单还是空的</strong><span class="sw-artist">添加链接或本地音频开始播放</span><div class="sw-cover-controls"><button class="sw-cover-change" type="button">选择封面</button><button class="sw-cover-reset" type="button">恢复默认</button></div></div>
       </div>
       <div class="sw-progress-area">
         <input class="sw-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="播放进度" />
@@ -186,6 +242,7 @@ function init() {
       <footer class="sw-footer"><div class="sw-file-tools"><button class="sw-export" type="button">导出歌单</button><button class="sw-import" type="button">导入歌单</button></div><span>仅本机保存 · 无内置曲库</span></footer>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
+      <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <p class="sw-notice" role="status" aria-live="polite"></p>
     </dialog>`;
   document.body.append(root);
@@ -198,6 +255,7 @@ function init() {
   const playButton = $('.sw-main-play');
   const fileInput = $('.sw-file-input');
   const jsonInput = $('.sw-json-input');
+  const coverInput = $('.sw-cover-input');
   const roleFilterSelect = $('.sw-role-filter');
   const roleManager = $('.sw-role-manager');
   const roleManagerItems = $('.sw-role-bind-items');
@@ -518,12 +576,116 @@ function init() {
       if (event) ctx.eventSource.on(event, () => syncActiveCharacter());
     }
   }
+  function selectedTrack() {
+    return visibleIndices().includes(currentIndex) ? settings.tracks[currentIndex] : null;
+  }
+  function showTrackCover(id) {
+    const coverUrl = id ? coverUrls.get(id) : null;
+    const now = selectedTrack();
+    if (now?.id === id || !id) {
+      const image = $('.sw-now-cover');
+      const visibleUrl = now ? coverUrls.get(now.id) : null;
+      if (visibleUrl) image.src = visibleUrl;
+      else image.removeAttribute('src');
+      image.hidden = !visibleUrl;
+      $('.sw-cover-reset').disabled = !visibleUrl;
+      $('.sw-cover-change').disabled = !now;
+    }
+    root.querySelectorAll('.sw-track-cover').forEach(button => {
+      if (button.dataset.coverId !== id) return;
+      const img = button.querySelector('img');
+      if (coverUrl) img.src = coverUrl;
+      else img.removeAttribute('src');
+      img.hidden = !coverUrl;
+      button.querySelector('span').hidden = !!coverUrl;
+    });
+  }
+  function processCoverQueue() {
+    // Keep DB reads small even when the user has the maximum 300-song playlist.
+    while (activeCoverReads < 3 && coverQueue.length) {
+      const id = coverQueue.shift();
+      const revision = coverRevision.get(id) || 0;
+      activeCoverReads += 1;
+      void (async () => {
+        try {
+          const blob = await coverAction('get', id);
+          if (revision !== (coverRevision.get(id) || 0) || !settings.tracks.some(t => t.id === id)) return;
+          coverUrls.set(id, blob instanceof Blob ? URL.createObjectURL(blob) : null);
+          showTrackCover(id);
+        } catch { /* A failed cover read must never stop song playback. */ }
+        finally {
+          coverPending.delete(id);
+          activeCoverReads -= 1;
+          processCoverQueue();
+        }
+      })();
+    }
+  }
+  function getSavedCover(id) {
+    if (!id || coverUrls.has(id) || coverPending.has(id)) return;
+    coverPending.add(id);
+    coverQueue.push(id);
+    processCoverQueue();
+  }
+  function chooseCover(id) {
+    if (!id || !settings.tracks.some(t => t.id === id)) return;
+    coverTargetId = id;
+    coverInput.value = '';
+    coverInput.click();
+  }
+  async function resetCover(id) {
+    if (!id || !settings.tracks.some(t => t.id === id)) return;
+    if (coverBusy.has(id)) { notice('请等封面保存完成'); return; }
+    coverBusy.add(id);
+    try {
+      await coverAction('delete', id);
+      coverRevision.set(id, (coverRevision.get(id) || 0) + 1);
+      const oldUrl = coverUrls.get(id);
+      coverUrls.set(id, null);
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
+      showTrackCover(id);
+      notice('已恢复默认封面');
+    } catch { notice('封面移除失败，请检查浏览器存储权限'); }
+    finally { coverBusy.delete(id); }
+  }
+  coverInput.addEventListener('change', async () => {
+    const file = coverInput.files?.[0];
+    const id = coverTargetId;
+    coverInput.value = '';
+    coverTargetId = null;
+    if (!file || !id || !settings.tracks.some(t => t.id === id)) return;
+    if (coverBusy.has(id)) { notice('这首歌的封面正在处理，请稍后'); return; }
+    coverBusy.add(id);
+    try {
+      const blob = await makeCoverBlob(file);
+      if (!settings.tracks.some(t => t.id === id)) return;
+      await coverAction('put', id, blob);
+      if (!settings.tracks.some(t => t.id === id)) {
+        await coverAction('delete', id);
+        return;
+      }
+      coverRevision.set(id, (coverRevision.get(id) || 0) + 1);
+      const oldUrl = coverUrls.get(id);
+      coverUrls.set(id, URL.createObjectURL(blob));
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
+      showTrackCover(id);
+      // Some mobile file pickers dismiss a non-modal dialog when returning.
+      // Reopen only after a successful image selection so the result is visible.
+      if (!isPanelOpen()) showPanel(true);
+      notice('这首歌的专属封面已保存 ✨');
+    } catch (error) { notice(error.message || '保存封面失败：可能存储空间不足'); }
+    finally { coverBusy.delete(id); }
+  });
+  $('.sw-cover-change').addEventListener('click', () => chooseCover(selectedTrack()?.id));
+  $('.sw-cover-reset').addEventListener('click', () => void resetCover(selectedTrack()?.id));
   function renderNow() {
     const visible = visibleIndices();
     const track = visible.includes(currentIndex) ? settings.tracks[currentIndex] : null;
     $('.sw-title').textContent = track ? track.title : (settings.tracks.length ? '当前分组暂无歌曲' : '歌单还是空的');
     $('.sw-artist').textContent = track ? `${track.artist} · ${track.kind === 'file' ? '本地音频' : '网络音频'}` : '添加链接或本地音频开始播放';
     $('.sw-count').textContent = `${visible.length}/${settings.tracks.length}`;
+    showTrackCover(track?.id || null);
+    if (track) getSavedCover(track.id);
   }
   function actionBtn(label, title, handler) {
     const btn = document.createElement('button');
@@ -537,6 +699,8 @@ function init() {
   }
   function renderList() {
     list.replaceChildren();
+    // Load the now-playing artwork ahead of any offscreen song thumbnails.
+    getSavedCover(selectedTrack()?.id);
     visibleIndices().forEach(index => {
       const track = settings.tracks[index];
       const item = document.createElement('li');
@@ -553,6 +717,19 @@ function init() {
       sub.textContent = `${track.artist} · ${track.kind === 'file' ? '本地' : '链接'} · ${(track.bindings || []).length ? `已绑定${track.bindings.length}个角色` : '未绑定'}`;
       select.append(trackName, sub);
       select.addEventListener('click', () => selectTrack(index, true));
+      const coverBtn = document.createElement('button');
+      coverBtn.type = 'button';
+      coverBtn.className = 'sw-track-cover';
+      coverBtn.dataset.coverId = track.id;
+      coverBtn.title = `选择「${track.title}」的本地专辑封面`;
+      coverBtn.setAttribute('aria-label', coverBtn.title);
+      const coverImg = document.createElement('img');
+      coverImg.alt = '';
+      coverImg.hidden = true;
+      const defaultCover = document.createElement('span');
+      defaultCover.textContent = '♫';
+      coverBtn.append(coverImg, defaultCover);
+      coverBtn.addEventListener('click', () => chooseCover(track.id));
       const actions = document.createElement('div');
       actions.className = 'sw-track-actions';
       if (currentCharacter) {
@@ -567,8 +744,10 @@ function init() {
         actions.append(actionBtn('✎', `编辑 ${track.title}`, () => editTrack(track.id)));
       }
       actions.append(actionBtn('×', `删除 ${track.title}`, () => deleteTrack(track.id)));
-      item.append(select, actions);
+      item.append(coverBtn, select, actions);
       list.append(item);
+      showTrackCover(track.id);
+      getSavedCover(track.id);
     });
     if (!visibleIndices().length) {
       const empty = document.createElement('li');
@@ -669,6 +848,13 @@ function init() {
       try { await fileAction('delete', removed.id); }
       catch { notice('歌曲已移出列表，但本地存储清理失败'); }
     }
+    // Deleting a song also deletes only that song's cover, not any other media.
+    coverRevision.set(id, (coverRevision.get(id) || 0) + 1);
+    const oldCover = coverUrls.get(id);
+    coverUrls.delete(id);
+    if (oldCover) URL.revokeObjectURL(oldCover);
+    try { await coverAction('delete', id); }
+    catch { notice('歌曲已移除，但封面缓存清理失败'); }
     const wasCurrent = index === currentIndex;
     if (index < currentIndex) currentIndex -= 1;
     if (wasCurrent || currentIndex >= settings.tracks.length) {
@@ -728,7 +914,7 @@ function init() {
     link.href = url; link.download = '听风-网络歌单.json';
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notice('已导出网络歌单和绑定；分享 JSON 前请注意内含角色名称，本地音频文件不包含');
+    notice('已导出网络歌单及绑定；本地音频和自选封面不会包含在 JSON 中');
   });
   $('.sw-import').addEventListener('click', () => jsonInput.click());
   jsonInput.addEventListener('change', async () => {

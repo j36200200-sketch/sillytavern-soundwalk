@@ -209,3 +209,18 @@
 
 /* v1.2.3 PNG pet stickers preserve soft painted details at small sizes. */
 #soundwalk-player-root .sw-pet-raster { object-fit: contain; image-rendering: auto; -webkit-user-drag: none; }
+
+/* v1.2.4: per-song local album artwork. */
+#soundwalk-player-root .sw-now-cover { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; border-radius:inherit; z-index:2; }
+#soundwalk-player-root .sw-now-cover[hidden] { display:none!important; }
+#soundwalk-player-root .sw-now-title { flex:1; }
+#soundwalk-player-root .sw-cover-controls { display:flex; flex-wrap:wrap; gap:8px; margin-top:2px; }
+#soundwalk-player-root .sw-cover-controls button { color:var(--sw-mint); font-size:11px; border-radius:7px; padding:3px 5px; background:#ffffff12; }
+#soundwalk-player-root .sw-cover-controls button:hover { background:#ffffff26; }
+#soundwalk-player-root .sw-cover-controls button:disabled { opacity:.35; cursor:default; }
+#soundwalk-player-root .sw-track-cover { flex:0 0 38px; width:38px; height:38px; margin-left:6px; border-radius:8px; overflow:hidden; display:grid; place-items:center; color:var(--sw-mint); background:linear-gradient(135deg,#3b6165,#1a3543); font-size:18px; }
+#soundwalk-player-root .sw-track-cover img { display:block; width:100%; height:100%; object-fit:cover; }
+#soundwalk-player-root .sw-track-cover img[hidden],#soundwalk-player-root .sw-track-cover span[hidden] {display:none!important;}
+#soundwalk-player-root .sw-track-cover:hover { outline:1px solid var(--sw-mint); }
+#soundwalk-player-root .sw-track-choice { padding-left:5px; }
+#soundwalk-player-root .sw-track-choice small { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
