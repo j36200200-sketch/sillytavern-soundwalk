@@ -444,10 +444,10 @@ function init() {
         <p class="sw-external-hint">点击识别时，公开歌单链接会发送给第三方 Playlist Out 解析服务。免登录可能只能预览前 10 首。不上传本地音乐、聊天或角色数据。</p>
         <div class="sw-form-actions"><button type="button" class="sw-external-cancel">关闭</button><button type="button" class="sw-external-fetch">识别歌单</button></div>
         <output class="sw-external-status" aria-live="polite"></output>
+        <a class="sw-external-open" target="_blank" rel="noopener noreferrer" hidden>在酷狗打开歌单听歌 ↗</a>
         <div class="sw-external-results" hidden>
           <strong class="sw-external-title"></strong>
           <p class="sw-external-summary"></p>
-          <a class="sw-external-open" target="_blank" rel="noopener noreferrer" hidden>在酷狗打开歌单听歌 ↗</a>
           <p class="sw-external-hint">识别到的是曲目名称，不是音频。要在《听风》内部播放，请给想导入的歌曲填写合法音频直链。留空的歌曲不会导入。</p>
           <div class="sw-external-tracks"></div>
           <div class="sw-form-actions"><button type="button" class="sw-external-import">导入已填写的直链</button></div>
@@ -1642,6 +1642,8 @@ function init() {
     closeBatchForm();
     externalForm.hidden = false;
     externalButton.setAttribute('aria-expanded','true');
+    externalOpen.hidden = true;
+    externalResults.hidden = true;
     externalStatus.textContent = '';
     requestAnimationFrame(positionPanelNearOrb);
     externalLink.focus();
@@ -1658,6 +1660,8 @@ function init() {
     externalFetch.disabled = true;
     externalResults.hidden = true;
     externalPlaylist = null;
+    externalOpen.href = url;
+    externalOpen.hidden = false;
     externalStatus.textContent = '正在识别公开歌单…';
     const timeout = setTimeout(() => controller.abort(),22000);
     try {
@@ -1713,7 +1717,7 @@ function init() {
       if (wasEmpty) void selectTrack(0,false,false);
       else refreshFilter();
     }
-    const message = '已导入 ' + added + ' 首可播放直链；跳过重复或容量不足 ' + skipped +
+    const message = '已导入 ' + added + ' 首音频直链；跳过重复或容量不足 ' + skipped +
       ' 首、无效链接 ' + invalid + ' 条。';
     externalStatus.textContent = message;
     notice(message);
