@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.11';
+const VERSION = '1.3.12';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -139,7 +139,7 @@ function normalizeWallpaperView(raw) {
   };
 }
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', closedPet: 'cat', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0, wallpaperView: normalizeWallpaperView() };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, networkAcceleration: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', closedPet: 'cat', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0, wallpaperView: normalizeWallpaperView() };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -156,6 +156,7 @@ function readSettings() {
       volume: Number.isFinite(data.volume) ? Math.max(0, Math.min(1, data.volume)) : 0.72,
       followCharacter: data.followCharacter === true,
       autoRolePlayback: data.autoRolePlayback === true,
+      networkAcceleration: data.networkAcceleration === true,
       roleOrders: normalizeRoleOrders(data.roleOrders),
       openPet: data.openPet === 'shepherd' ? 'shepherd' : 'golden',
       closedPet: CLOSED_PETS.includes(data.closedPet) ? data.closedPet : 'cat',
@@ -327,6 +328,8 @@ function init() {
   let orbPosition = {...settings.orbPosition};
   let followCharacter = settings.followCharacter;
   let autoRolePlayback = settings.autoRolePlayback;
+  let networkAcceleration = settings.networkAcceleration;
+  let preloadExpected = false;
   let openPet = settings.openPet;
   let closedPet = settings.closedPet;
   let brandIcon = settings.brandIcon;
@@ -424,6 +427,8 @@ function init() {
         <div class="sw-role-auto-line"><label class="sw-role-auto-label"><input class="sw-role-autoplay" type="checkbox" /><span>进入角色自动播放</span></label><span class="sw-role-auto-hint">两个开关可任意顺序开启 · 绑定音乐按顺序播放</span></div>
         <div class="sw-role-tools"><label>歌单分组 <select class="sw-role-filter" aria-label="选择歌单分组"><option value="all">全部歌曲</option></select></label><button class="sw-text-button sw-role-manage" type="button" aria-expanded="false">管理角色绑定</button></div>
         <div class="sw-role-manager" hidden><p class="sw-role-hint">勾选歌曲，绑定到当前角色；取消勾选即解除绑定。一首歌可以绑定多个角色。</p><div class="sw-role-bind-items"></div></div>
+        <div class="sw-role-tools"><label>网络音乐 <select class="sw-network-acceleration" aria-label="网络音乐智能加速"><option value="smart">智能加速</option><option value="off">关闭</option></select></label></div>
+        <p class="sw-role-hint">默认关闭；开启后仅准备当前歌曲，可能提前读取整首。节省流量、弱网或网络信息不可用时保持保守。</p>
       </section>
       </details>
       <ol class="sw-list" aria-label="播放列表"></ol>
@@ -670,7 +675,7 @@ function init() {
       // Open directly on pointerup. Some Android WebViews/browsers don't send
       // the follow-up click after pointer capture or gesture interception.
       lastPointerTapAt = Date.now();
-      showPanel(!isPanelOpen());
+      showPanel(!isPanelOpen(), true);
     }
     event.stopPropagation();
   }
@@ -687,7 +692,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, closedPet, brandIcon, panelOpacity, frostBlur, wallpaperView}));
+        followCharacter, autoRolePlayback, networkAcceleration, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, closedPet, brandIcon, panelOpacity, frostBlur, wallpaperView}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -745,7 +750,39 @@ function init() {
     panel.style.setProperty('right', 'auto', 'important');
     panel.style.setProperty('bottom', 'auto', 'important');
   }
-  function showPanel(show) {
+  function updatePreload() {
+    let hint = 'metadata';
+    if (networkAcceleration && preloadExpected && isPanelOpen() && document.visibilityState === 'visible' &&
+        navigator.onLine !== false && settings.tracks[currentIndex]?.kind === 'url') {
+      try {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        // effectiveType describes estimated quality, not Wi-Fi. Unknown is conservative.
+        if (connection?.saveData === false && connection.effectiveType === '4g' &&
+            (!Number.isFinite(connection.rtt) || connection.rtt < 400) &&
+            (!Number.isFinite(connection.downlink) || connection.downlink >= 1)) hint = 'auto';
+      } catch { /* Missing/blocked network information keeps the original hint. */ }
+    }
+    // A hint only: no load(), second Audio, fetch, or persistent audio cache.
+    if (audio.preload !== hint) audio.preload = hint;
+  }
+  $('.sw-network-acceleration').value = networkAcceleration ? 'smart' : 'off';
+  $('.sw-network-acceleration').addEventListener('change', e => {
+    networkAcceleration = e.target.value === 'smart';
+    // Enabling is an explicit preparation for this selection only.
+    preloadExpected = networkAcceleration;
+    updatePreload();persist();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') preloadExpected = false;
+    updatePreload();
+  });
+  window.addEventListener('online', updatePreload);
+  window.addEventListener('offline', updatePreload);
+  try {
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    connection?.addEventListener?.('change', updatePreload);
+  } catch { /* Optional capability; ordinary media playback still works. */ }
+  function showPanel(show, prepare = false) {
     if (show === isPanelOpen()) return;
     if (dialogSupported) {
       try {
@@ -761,6 +798,9 @@ function init() {
       panel.hidden = !show;
     }
     syncPanelState();
+    if (!show) preloadExpected = false;
+    else if (prepare) preloadExpected = true;
+    updatePreload();
     if (show) {
       positionPanelNearOrb();
       // A following frame accounts for dynamic font sizing / top-layer layout.
@@ -871,6 +911,7 @@ function init() {
   }
   function pausePlayback() {
     ++playRequest;playIntent = false;isPendingPlay = false;
+    preloadExpected = false;updatePreload();
     clearNetworkLoading();audio.pause();renderTransport();
   }
   function playbackErrorMessage(error) {
@@ -1219,7 +1260,7 @@ function init() {
       const sub = document.createElement('small');
       sub.textContent = `${track.artist} · ${track.kind === 'file' ? '本地' : '链接'} · ${(track.bindings || []).length ? `已绑定${track.bindings.length}个角色` : '未绑定'}`;
       select.append(trackName, sub);
-      select.addEventListener('click', () => selectTrack(index, true));
+      select.addEventListener('click', () => selectTrack(index, true, true));
       const coverBtn = document.createElement('button');
       coverBtn.type = 'button';
       coverBtn.className = 'sw-track-cover';
@@ -1273,7 +1314,7 @@ function init() {
     $('.sw-elapsed').textContent = '0:00';
     $('.sw-duration').textContent = '0:00';
   }
-  async function selectTrack(index, shouldPlay = false) {
+  async function selectTrack(index, shouldPlay = false, prepare = false) {
     const nextTrack = visibleIndices().includes(index) ? settings.tracks[index] : null;
     const seq = ++playSequence;
     const request = ++playRequest;
@@ -1285,6 +1326,8 @@ function init() {
     audio.load();
     if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
     currentIndex = index;
+    preloadExpected = Boolean(prepare && nextTrack?.kind === 'url');
+    updatePreload();
     resetProgress();
     renderList();
     renderTransport();
@@ -1309,11 +1352,13 @@ function init() {
       }
     }
   }
-  async function play() {
+  async function play(prepare = false) {
     const visible = visibleIndices();
     if (!visible.length) { notice('当前分组没有歌曲，请先绑定或切换分组'); return; }
-    if (!visible.includes(currentIndex)) {await selectTrack(visible[0], true); return;}
-    if (!audio.src || audio.error) { await selectTrack(currentIndex, true); return; }
+    if (!visible.includes(currentIndex)) {await selectTrack(visible[0], true, prepare); return;}
+    if (!audio.src || audio.error) { await selectTrack(currentIndex, true, prepare); return; }
+    if (prepare) preloadExpected = true;
+    updatePreload();
     const seq = playSequence, request = ++playRequest;
     playIntent = true;isPendingPlay = true;
     startNetworkLoading();renderTransport();
@@ -1349,7 +1394,7 @@ function init() {
       void play();
       return;
     }
-    void selectTrack(nextIndex(direction), true);
+    void selectTrack(nextIndex(direction), true, !fromEnded);
   }
   function showForm(track = null) {
     editId = track?.id || null;
@@ -1403,11 +1448,11 @@ function init() {
       const idx = settings.tracks.findIndex(track => track.id === editId);
       if (idx < 0) return;
       settings.tracks[idx] = { ...settings.tracks[idx], title, artist, src };
-      if (idx === currentIndex) void selectTrack(idx, false);
+      if (idx === currentIndex) void selectTrack(idx, false, true);
     } else {
       const wasEmpty = settings.tracks.length === 0;
       settings.tracks.push({ id: uid(), kind: 'url', title, artist, src, bindings: followCharacter && currentCharacter ? [currentCharacter.key] : [] });
-      if (wasEmpty) void selectTrack(0, false);
+      if (wasEmpty) void selectTrack(0, false, true);
     }
     hideForm(); refreshFilter(); notice('歌曲已保存');
   });
@@ -1470,7 +1515,7 @@ function init() {
         await addChecked('wallpaper',WALLPAPER_KEY,wallpaper,'播放器壁纸',WALLPAPER_MAX_BYTES);
       const unsigned={format:'soundwalk-complete',version:3,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
-          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur,wallpaperView},entries};
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,networkAcceleration,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur,wallpaperView},entries};
       const metadataCrc32=checksumHex(new TextEncoder().encode(JSON.stringify(unsigned)));
       const meta={...unsigned,metadataCrc32};
       const payload=new TextEncoder().encode(JSON.stringify(meta));
@@ -1592,6 +1637,8 @@ function init() {
       audio.volume=Number.isFinite(meta.settings.volume)?Math.max(0,Math.min(1,meta.settings.volume)):.72;
       followCharacter=meta.settings.followCharacter===true;
       autoRolePlayback=meta.settings.autoRolePlayback===true;
+      networkAcceleration=meta.settings.networkAcceleration===true;
+      $('.sw-network-acceleration').value=networkAcceleration?'smart':'off';
       manualFilter=typeof meta.settings.manualFilter==='string'?meta.settings.manualFilter:'all';
       openPet=meta.settings.openPet==='shepherd'?'shepherd':'golden';
       closedPet=CLOSED_PETS.includes(meta.settings.closedPet)?meta.settings.closedPet:'cat';
@@ -1775,7 +1822,7 @@ function init() {
     // older browsers that don't expose Pointer Events, but never double-toggle.
     if (event.detail !== 0 && Date.now() - lastPointerTapAt < 750) return;
     if (event.detail !== 0 && Date.now() - lastDragEnd < 750) return;
-    showPanel(!isPanelOpen());
+    showPanel(!isPanelOpen(), true);
   });
   const petSettings = $('.sw-pet-settings');
   const petSettingsToggle = $('.sw-pet-settings-toggle');
@@ -1803,7 +1850,7 @@ function init() {
   }));
   $('.sw-close').addEventListener('click', () => showPanel(false));
   root.addEventListener('keydown', e => { if (e.key === 'Escape' && isPanelOpen()) showPanel(false); });
-  playButton.addEventListener('click', () => playIntent ? pausePlayback() : void play());
+  playButton.addEventListener('click', () => playIntent ? pausePlayback() : void play(true));
   $('.sw-prev').addEventListener('click', () => advance(-1));
   $('.sw-next').addEventListener('click', () => advance(1));
   $('.sw-mode').addEventListener('click', () => {
@@ -1868,6 +1915,11 @@ function init() {
   audio.addEventListener('durationchange', () => $('.sw-duration').textContent = formatTime(audio.duration));
   audio.addEventListener('error', () => {
     if (!hasCurrentMedia() || !audio.error) return;
+    if (!playIntent && networkAcceleration && settings.tracks[currentIndex]?.kind === 'url') {
+      // Failed preparation is not a failed play request. A manual play retries
+      // the same source through the existing error/reselection path.
+      preloadExpected = false;updatePreload();return;
+    }
     const message = playbackErrorMessage();
     pausePlayback();notice(message);
   });

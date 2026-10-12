@@ -144,6 +144,10 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       await require('./network-playback.cjs')({browser,origin,fixture,test,until,range,open,upload,wav,artifacts});
       assert.deepEqual(errors,[]);console.log(`${results.length} network regression checks passed`);return;
     }
+    if(process.env.SMART_ONLY==='1') {
+      await require('./smart-loading.cjs')({browser,origin,fixture,test,until,open,upload,download,media,settings,wav,artifacts});
+      assert.deepEqual(errors,[]);console.log(`${results.length} smart loading checks passed`);return;
+    }
     const tracks=[
       {id:'local-1',title:'Local A',artist:'本地文件',kind:'file',bindings:[ROLE,OTHER]},
       {id:'local-2',title:'Local B',artist:'本地文件',kind:'file',bindings:[ROLE]},
@@ -350,13 +354,13 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
     await test('v1/v2 full backups and v3 without framing restore centered defaults',async()=>{
       const length=Number(backup.subarray(6,18).toString()),original=JSON.parse(backup.subarray(18,18+length)),bytes=backup.subarray(18+length);
       for(const version of [1,2,3]){
-        const meta=structuredClone(original);meta.version=version;delete meta.metadataCrc32;delete meta.settings.wallpaperView;
+        const meta=structuredClone(original);meta.version=version;delete meta.metadataCrc32;delete meta.settings.wallpaperView;delete meta.settings.networkAcceleration;
         if(version===1){meta.entries=meta.entries.filter(e=>e.kind!=='wallpaper');delete meta.settings.panelOpacity;delete meta.settings.frostBlur;}
         if(version===3)meta.metadataCrc32=crc32(Buffer.from(JSON.stringify(meta))).toString(16).padStart(8,'0');
         const data=Buffer.from(JSON.stringify(meta));const size=meta.entries.reduce((sum,e)=>sum+e.size,0);
         const old=Buffer.concat([Buffer.from('SWBK1\n'+String(data.length).padStart(12,'0')),data,bytes.subarray(0,size)]);
         await upload(local,'.sw-backup-input',old,'old.swbackup');await until(async()=>/安全恢复完成/.test(await notice(local)));
-        assert.deepEqual((await settings(local)).wallpaperView,{zoom:100,x:50,y:50});
+        assert.deepEqual((await settings(local)).wallpaperView,{zoom:100,x:50,y:50});assert.equal((await settings(local)).networkAcceleration,false);
         assert.equal(await local.locator('.sw-panel').evaluate(el=>el.classList.contains('sw-wallpaper-on')),version>=2);
       }
     });
@@ -368,6 +372,7 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       const s=await settings(local);assert.deepEqual(s.wallpaperView,{zoom:100,x:50,y:50});assert.equal(s.panelOpacity,100);assert.equal(s.frostBlur,0);
     });
     await require('./network-playback.cjs')({browser,origin,fixture,test,until,range,open,upload,wav,artifacts});
+    await require('./smart-loading.cjs')({browser,origin,fixture,test,until,open,upload,download,media,settings,wav,artifacts});
     assert.deepEqual(errors,[]);
     console.log(`${results.length} browser regression checks passed; artifacts: ${artifacts}`);
   }finally{for(const ctx of contexts)await ctx.close();await browser.close();for(const s of servers)s.close();}

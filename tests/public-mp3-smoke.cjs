@@ -4,13 +4,14 @@ const http=require('node:http');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const root=path.resolve(__dirname,'..'),manifest=require('../manifest.json');
-const urls=['https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3','https://www.w3schools.com/html/horse.mp3'];
+const urls=[1,2,3].map(n=>`https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${n}.mp3`).concat('https://www.w3schools.com/html/horse.mp3');
 
 (async()=>{
   const server=http.createServer(async(req,res)=>{
     const u=new URL(req.url,'http://localhost');
-    if(process.env.PUBLIC_MP3_FIXTURES&&/^\/fixture-[01]\.mp3$/.test(u.pathname)) {
-      const name=u.pathname.includes('fixture-0')?'public-soundhelix-sample.mp3':'public-horse.mp3';
+    if(process.env.PUBLIC_MP3_FIXTURES&&/^\/fixture-[0-3]\.mp3$/.test(u.pathname)) {
+      const index=Number(u.pathname.match(/\d/)[0]);
+      const name=index===3?'public-horse.mp3':`public-soundhelix-${index+1}.mp3`;
       try{res.setHeader('Content-Type','audio/mpeg');res.end(await fs.readFile(path.join(process.env.PUBLIC_MP3_FIXTURES,name)));}catch{res.writeHead(404).end();}return;
     }
     if(u.pathname==='/'){
@@ -35,7 +36,10 @@ const urls=['https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3','htt
       page.on('requestfailed',r=>{if(r.url()===url)failedRequests.push(r.failure()?.errorText);});
       try{
         await page.goto(`http://127.0.0.1:${server.address().port}`);
-        await page.locator('.sw-orb').click();await page.locator('.sw-add-link').click();
+        await page.locator('.sw-orb').click();await page.locator('.sw-advanced > summary').click();
+        await page.locator('.sw-network-acceleration').selectOption('smart');
+        await page.locator('.sw-advanced > summary').click();
+        await page.locator('.sw-add-link').click();
         const source=process.env.PUBLIC_MP3_FIXTURES?`http://127.0.0.1:${server.address().port}/fixture-${index}.mp3`:url;
         await page.locator('.sw-name').fill('Live MP3 check');await page.locator('.sw-url').fill(source);await page.locator('.sw-save').click();
         await page.locator('.sw-main-play').click();

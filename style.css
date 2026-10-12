@@ -228,7 +228,7 @@
 #soundwalk-player-root .sw-role-toggle {display:flex; align-items:center; gap:4px; font-size:11px; white-space:nowrap; color:var(--sw-cream); }
 #soundwalk-player-root .sw-role-toggle input, #soundwalk-player-root .sw-role-bind-row input {accent-color:var(--sw-mint);}
 #soundwalk-player-root .sw-role-tools label {display:flex; align-items:center; gap:7px; font-size:11px; min-width:0; }
-#soundwalk-player-root .sw-role-filter {width:125px; max-width:42vw; min-width:0; border:1px solid #ffffff32; border-radius:8px; padding:5px; color:var(--sw-cream); background:var(--sw-bg2); font-size:11px; }
+#soundwalk-player-root .sw-role-filter, #soundwalk-player-root .sw-network-acceleration {width:125px; max-width:42vw; min-width:0; border:1px solid #ffffff32; border-radius:8px; padding:5px; color:var(--sw-cream); background:var(--sw-bg2); font-size:11px; }
 #soundwalk-player-root .sw-role-filter:disabled {opacity:.6;}
 #soundwalk-player-root .sw-role-manager {display:block; background:#ffffff0a; border:1px solid #ffffff16; padding:7px; border-radius:10px;}
 #soundwalk-player-root .sw-role-manager[hidden] {display:none!important;}

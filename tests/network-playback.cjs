@@ -60,6 +60,9 @@ module.exports = async function networkChecks({browser,origin,fixture,test,until
   await mock.evaluate(()=>{
     const audio=window.testAudio;
     audio.preload='none';
+    // Keep native fetching disabled in this deterministic event/Promise double.
+    let preload='metadata';
+    Object.defineProperty(audio,'preload',{configurable:true,get:()=>preload,set:value=>preload=value});
     const state={paused:true,ended:false,readyState:0,seeking:false,error:null,currentSrc:'',currentTime:0,duration:120};
     const requests=[];
     for(const key of Object.keys(state))Object.defineProperty(audio,key,{configurable:true,get:()=>state[key],
@@ -221,8 +224,9 @@ module.exports = async function networkChecks({browser,origin,fixture,test,until
     await mock.evaluate(()=>window.mediaHarness.emit('error',{error:{code:2}}));
     await mock.clock.runFor(30000);assert.equal(await status(mock),false);assert.equal(await label(mock),'播放');
   });
-  const local=await fixture(browser,origin,{...raw,tracks:[{id:'seek-local',title:'Local seek',kind:'file'}]},true);await open(local);
+  const local=await fixture(browser,origin,{...raw,networkAcceleration:true,tracks:[{id:'seek-local',title:'Local seek',kind:'file'}]},true);await open(local);
   await test('native local playing/paused seeks keep their intent and never show network loading',async()=>{
+    assert.equal(await local.evaluate(()=>window.testAudio.preload),'metadata');
     await local.locator('.sw-main-play').click();await until(()=>local.evaluate(()=>window.testAudio.currentTime>0));
     await range(local,'.sw-seek',500);await until(()=>local.evaluate(()=>!window.testAudio.seeking&&window.testAudio.currentTime>5));
     assert.equal(await status(local),false);assert.equal(await label(local),'暂停');
