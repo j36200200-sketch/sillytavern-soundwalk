@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.12';
+const VERSION = '1.3.13';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -419,7 +419,7 @@ function init() {
         <button class="sw-icon sw-mute" type="button" aria-label="静音">${icons.volume}</button>
       </div>
       <div class="sw-volume-row"><span>音量</span><input class="sw-volume" aria-label="音量" type="range" min="0" max="100" value="72"/><label for="sw-sleep-select">定时停止</label><select id="sw-sleep-select" class="sw-sleep" aria-label="定时停止"><option value="0">关闭</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option></select></div>
-      <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button></div></div>
+      <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button><button type="button" class="sw-text-button sw-add-batch" aria-expanded="false" title="批量导入音频直链">+ 批量</button></div></div>
       <div class="sw-search-row"><input class="sw-search" type="search" placeholder="搜索歌名 / 歌手" aria-label="搜索歌曲" maxlength="100" /><button class="sw-search-clear" type="button" aria-label="清除搜索" title="清除搜索">×</button></div>
       <details class="sw-advanced"><summary>⚙ 角色绑定与歌单设置</summary>
       <section class="sw-roles" aria-label="角色歌单设置">
@@ -437,6 +437,13 @@ function init() {
         <label>歌手<input class="sw-singer" type="text" maxlength="70" placeholder="可选"/></label>
         <label>音频直链<input class="sw-url" type="url" placeholder="https://example.com/song.mp3"/></label>
         <div class="sw-form-actions"><button type="button" class="sw-cancel">取消</button><button type="button" class="sw-save">保存歌曲</button></div>
+      </div>
+      <div class="sw-batch-form" hidden>
+        <label for="sw-batch-text">批量导入音频直链（每行一首）</label>
+        <textarea class="sw-batch-text" id="sw-batch-text" rows="6" maxlength="80000" spellcheck="false" placeholder="https://example.com/001.mp3&#10;歌名 | https://example.com/002.mp3&#10;歌名 | 歌手 | https://example.com/003.flac"></textarea>
+        <p class="sw-batch-hint">支持纯直链、歌名 | 直链、歌名 | 歌手 | 直链，也支持 Tab 分隔。不支持酷狗等平台的歌单分享网页；只保存链接，不下载音乐。</p>
+        <output class="sw-batch-preview" aria-live="polite">粘贴后预览导入数量</output>
+        <div class="sw-form-actions"><button type="button" class="sw-batch-cancel">取消</button><button type="button" class="sw-batch-save" disabled>导入歌曲</button></div>
       </div>
       <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-backup-check" type="button">校验已有备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><p class="sw-migration-hint">搬到另一个酒馆：在这里做「完整备份」，把 .swbackup 文件带过去，再点「恢复完整备份」。包含本地音乐、封面、壁纸、绑定、顺序和设置；恢复会替换目标歌单，请先备份目标数据。</p><p class="sw-migration-hint">网络歌单 JSON 只包含链接歌曲及其绑定和顺序，不含本地音频、图片或外观设置。角色头像文件名不同，需在目标酒馆重新绑定。</p><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
@@ -1397,6 +1404,7 @@ function init() {
     void selectTrack(nextIndex(direction), true, !fromEnded);
   }
   function showForm(track = null) {
+    closeBatchForm();
     editId = track?.id || null;
     $('.sw-name').value = track?.title || '';
     $('.sw-singer').value = track?.artist === '未知歌手' ? '' : (track?.artist || '');
@@ -1455,6 +1463,85 @@ function init() {
       if (wasEmpty) void selectTrack(0, false, true);
     }
     hideForm(); refreshFilter(); notice('歌曲已保存');
+  });
+
+  // v1.3.13: paste multiple audio URLs without downloading audio or touching backups.
+  const batchForm = $('.sw-batch-form');
+  const batchText = $('.sw-batch-text');
+  const batchButton = $('.sw-add-batch');
+  const batchPreview = $('.sw-batch-preview');
+  const batchSave = $('.sw-batch-save');
+  function closeBatchForm() {
+    batchForm.hidden = true;
+    batchButton.setAttribute('aria-expanded', 'false');
+  }
+  function suggestedBatchTitle(src, row) {
+    try {
+      const basename = decodeURIComponent(new URL(src).pathname.split('/').pop() || '');
+      if (/\.(?:mp3|m4a|aac|wav|flac|ogg|opus)$/i.test(basename)) {
+        return cleanText(basename.replace(/\.(?:mp3|m4a|aac|wav|flac|ogg|opus)$/i, '')) || '网络歌曲 ' + row;
+      }
+    } catch { /* Fall back when the URL filename cannot be decoded. */ }
+    return '网络歌曲 ' + row;
+  }
+  function inspectBatchInput() {
+    const seen = new Set(settings.tracks.filter(track => track.kind === 'url').map(track => track.src));
+    const entries = [];
+    const lines = batchText.value.split(/\r?\n/);
+    let total = 0, invalid = 0, duplicates = 0, exceeded = 0, tooMany = 0;
+    for (const source of lines) {
+      const line = source.trim();
+      if (!line) continue;
+      total++;
+      if (total > 1000) { tooMany++; continue; }
+      // Preserve pipes contained within a stand-alone URL.
+      const parts = /^https?:\/\/\S+$/i.test(line) ? [line]
+        : line.split(/\s*\|\s*|\t+/).map(part => part.trim()).filter(Boolean);
+      if (!parts.length || parts.length > 3) { invalid++; continue; }
+      const src = safeUrl(parts[parts.length - 1]);
+      if (!src || (parts.length > 1 && !cleanText(parts[0]))) { invalid++; continue; }
+      if (seen.has(src)) { duplicates++; continue; }
+      seen.add(src);
+      if (settings.tracks.length + entries.length >= MAX_TRACKS) { exceeded++; continue; }
+      const title = parts.length > 1 ? cleanText(parts[0]) : suggestedBatchTitle(src, total);
+      const artist = parts.length === 3 ? cleanText(parts[1], 70) || '未知歌手' : '未知歌手';
+      entries.push({ id:uid(), kind:'url', title, artist, src,
+        bindings:followCharacter && currentCharacter ? [currentCharacter.key] : [] });
+    }
+    return { entries, total, invalid, duplicates, exceeded, tooMany };
+  }
+  function updateBatchPreview() {
+    const result = inspectBatchInput();
+    batchSave.disabled = !result.entries.length;
+    batchPreview.textContent = !result.total
+      ? '粘贴后预览导入数量'
+      : '可导入 ' + result.entries.length + ' 首 · 重复 ' + result.duplicates +
+        ' 首 · 无效 ' + result.invalid + ' 行 · 容量不足 ' + result.exceeded +
+        ' 首' + (result.tooMany ? ' · 超出单次1000行限制 ' + result.tooMany + ' 行' : '');
+  }
+  batchButton.addEventListener('click', () => {
+    if (!batchForm.hidden) { closeBatchForm(); return; }
+    hideForm();
+    batchForm.hidden = false;
+    batchButton.setAttribute('aria-expanded', 'true');
+    updateBatchPreview();
+    requestAnimationFrame(positionPanelNearOrb);
+    batchText.focus();
+  });
+  $('.sw-batch-cancel').addEventListener('click', closeBatchForm);
+  batchText.addEventListener('input', updateBatchPreview);
+  batchSave.addEventListener('click', () => {
+    const result = inspectBatchInput();
+    if (!result.entries.length) { notice('没有可导入的直链，请检查格式或歌单剩余容量'); return; }
+    const wasEmpty = !settings.tracks.length;
+    settings.tracks.push(...result.entries);
+    batchText.value = '';
+    closeBatchForm();
+    if (wasEmpty) void selectTrack(0, false, false);
+    else refreshFilter();
+    notice('已导入 ' + result.entries.length + ' 首网络歌曲；跳过重复 ' +
+      result.duplicates + ' 首、无效 ' + result.invalid + ' 行、容量不足 ' +
+      result.exceeded + ' 首' + (result.tooMany ? '、超过行数限制 ' + result.tooMany + ' 行' : ''));
   });
   $('.sw-add-link').addEventListener('click', () => showForm());
   $('.sw-cancel').addEventListener('click', hideForm);
