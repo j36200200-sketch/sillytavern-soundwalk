@@ -194,11 +194,11 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
         assert(await page.locator('.sw-panel-content').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
       }
     });
-    await test('all 24 original and new stickers load and new choices persist independently',async()=>{
+    await test('all 25 original and new stickers load and new choices persist independently',async()=>{
       if(await page.locator('.sw-appearance').isVisible())await page.locator('.sw-appearance-toggle').click();
       await page.locator('.sw-pet-settings-toggle').click();
-      assert.equal(await page.locator('.sw-pet-closed-choices button').count(),24);
-      const choices={rabbit:'rabbit-v138',whiteCat:'white-cat-v138',fox:'fox-v138',bear:'bear-v138',deer:'deer-v138',otter:'otter-v138',penguin:'penguin-v138',parrot:'parrot-v138',peacock:'peacock-v138',peacockFan:'peacock-fan-v138',jellyfish:'jellyfish-v139',spider:'spider-v139',beagle:'beagle-v139',orca:'orca-v139',octopus:'octopus-v139',blackOctopus:'black-octopus-v139'};
+      assert.equal(await page.locator('.sw-pet-closed-choices button').count(),25);
+      const choices={rabbit:'rabbit-v138',whiteCat:'white-cat-v138',fox:'fox-v138',bear:'bear-v138',deer:'deer-v138',otter:'otter-v138',penguin:'penguin-v138',parrot:'parrot-v138',peacock:'peacock-v138',peacockFan:'peacock-fan-v138',jellyfish:'jellyfish-v139',spider:'spider-v139',beagle:'beagle-v139',orca:'orca-v139',octopus:'octopus-v139',blackOctopus:'black-octopus-v139',user:'user-v1317'};
       await until(()=>page.locator('.sw-pet-thumb img').evaluateAll(images=>images.every(img=>img.complete&&img.naturalWidth>0)));
       await page.screenshot({path:path.join(artifacts,'pet-wardrobe.png')});
       for(const [id,file] of Object.entries(choices)){
@@ -268,16 +268,18 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       assert.equal(s.volume,.4);assert.equal(s.panelOpacity,75);assert.equal(s.frostBlur,16);
       assert.deepEqual(await media(dest),before);
     });
-    await test('new pet choice survives full backup restore and reload',async()=>{
-      const length=Number(backup.subarray(6,18).toString()),meta=JSON.parse(backup.subarray(18,18+length));
-      delete meta.metadataCrc32;meta.settings.closedPet='blackOctopus';
-      meta.metadataCrc32=crc32(Buffer.from(JSON.stringify(meta))).toString(16).padStart(8,'0');
-      const bytes=Buffer.from(JSON.stringify(meta));
-      const updated=Buffer.concat([Buffer.from('SWBK1\n'+String(bytes.length).padStart(12,'0')),bytes,backup.subarray(18+length)]);
-      const pet=await fixture(browser,target,{tracks:[],orbPosition:{x:.8,y:.94}},false);await open(pet);
-      await upload(pet,'.sw-backup-input',updated,'pet.swbackup');await until(async()=>/安全恢复完成/.test(await notice(pet)));
-      await pet.reload();assert.equal((await settings(pet)).closedPet,'blackOctopus');
-      assert.match(await pet.locator('.sw-orb-pet img').getAttribute('src'),/pet-black-octopus-v139/);
+    await test('black octopus and User sticker survive full backup restore and reload',async()=>{
+      for(const [id,file] of [['blackOctopus','black-octopus-v139'],['user','user-v1317']]){
+        const length=Number(backup.subarray(6,18).toString()),meta=JSON.parse(backup.subarray(18,18+length));
+        delete meta.metadataCrc32;meta.settings.closedPet=id;
+        meta.metadataCrc32=crc32(Buffer.from(JSON.stringify(meta))).toString(16).padStart(8,'0');
+        const bytes=Buffer.from(JSON.stringify(meta));
+        const updated=Buffer.concat([Buffer.from('SWBK1\n'+String(bytes.length).padStart(12,'0')),bytes,backup.subarray(18+length)]);
+        const pet=await fixture(browser,target,{tracks:[],orbPosition:{x:.8,y:.94}},false);await open(pet);
+        await upload(pet,'.sw-backup-input',updated,'pet.swbackup');await until(async()=>/安全恢复完成/.test(await notice(pet)));
+        await pet.reload();assert.equal((await settings(pet)).closedPet,id);
+        assert((await pet.locator('.sw-orb-pet img').getAttribute('src')).endsWith(`pet-${file}.webp`));
+      }
     });
     await test('restored local audio really plays, pauses, seeks, changes tracks and volume',async()=>{
       await dest.locator('.sw-main-play').click();await until(()=>dest.evaluate(()=>!window.testAudio.paused&&window.testAudio.currentTime>0));

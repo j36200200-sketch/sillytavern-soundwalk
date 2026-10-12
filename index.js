@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.16';
+const VERSION = '1.3.17';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -57,6 +57,7 @@ const petAssets = Object.freeze({
   orca: new URL('./assets/pets/pet-orca-v139.webp', import.meta.url).href,
   octopus: new URL('./assets/pets/pet-octopus-v139.webp', import.meta.url).href,
   blackOctopus: new URL('./assets/pets/pet-black-octopus-v139.webp', import.meta.url).href,
+  user: new URL('./assets/pets/pet-user-v1317.webp', import.meta.url).href,
 });
 const petIcons = {
   cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
@@ -82,17 +83,18 @@ const petIcons = {
   beagle: `<img class="sw-pet-art" src="${petAssets.beagle}" alt="抬爪比格小狗" draggable="false" decoding="async" />`,
   orca: `<img class="sw-pet-art" src="${petAssets.orca}" alt="黑白小虎鲸" draggable="false" decoding="async" />`,
   octopus: `<img class="sw-pet-art" src="${petAssets.octopus}" alt="橙色小章鱼" draggable="false" decoding="async" />`,
-  blackOctopus: `<img class="sw-pet-art" src="${petAssets.blackOctopus}" alt="长触手黑色章鱼" draggable="false" decoding="async" />`
+  blackOctopus: `<img class="sw-pet-art" src="${petAssets.blackOctopus}" alt="长触手黑色章鱼" draggable="false" decoding="async" />`,
+  user: `<img class="sw-pet-art" src="${petAssets.user}" alt="写着 User 的白色面团小人" draggable="false" decoding="async" />`
 };
 const CLOSED_PETS = Object.freeze(['cat', 'golden', 'shepherd', 'owl', 'raven', 'snake', 'wolf', 'samoyed',
   'rabbit', 'whiteCat', 'fox', 'bear', 'deer', 'otter', 'penguin', 'parrot', 'peacock', 'peacockFan',
-  'jellyfish', 'spider', 'beagle', 'orca', 'octopus', 'blackOctopus']);
+  'jellyfish', 'spider', 'beagle', 'orca', 'octopus', 'blackOctopus', 'user']);
 const PET_LABELS = Object.freeze({
   cat: '小黑猫', golden: '金毛小狗', shepherd: '黑背德牧', owl: '雪鸮',
   raven: '乌鸦', snake: '小蛇', wolf: '小狼', samoyed: '萨摩耶',
   rabbit: '小兔子', whiteCat: '小白猫', fox: '小狐狸', bear: '小熊', deer: '小鹿',
   otter: '水獭', penguin: '企鹅', parrot: '鹦鹉', peacock: '孔雀', peacockFan: '开屏孔雀',
-  jellyfish: '水母', spider: '小蜘蛛', beagle: '比格犬', orca: '虎鲸', octopus: '小章鱼', blackOctopus: '黑章鱼'
+  jellyfish: '水母', spider: '小蜘蛛', beagle: '比格犬', orca: '虎鲸', octopus: '小章鱼', blackOctopus: '黑章鱼', user: 'User 小人'
 });
 
 function uid() {
@@ -393,8 +395,8 @@ function init() {
       </section>
       <section id="soundwalk-pet-settings" class="sw-pet-settings" aria-label="宠物图标设置" hidden>
         <div class="sw-pet-info"><strong>宠物头像衣橱</strong><span>收起和展开可独立选择 · 默认小黑猫 · 透明贴纸无方框</span></div>
-        <div class="sw-pet-group-heading"><strong>收起时显示</strong><span>让喜欢的小动物守在聊天页旁边</span></div>
-        <div class="sw-pet-choices sw-pet-closed-choices" role="group" aria-label="收起时的动物头像">
+        <div class="sw-pet-group-heading"><strong>收起时显示</strong><span>让喜欢的小伙伴守在聊天页旁边</span></div>
+        <div class="sw-pet-choices sw-pet-closed-choices" role="group" aria-label="收起时的贴纸头像">
           ${CLOSED_PETS.map(pet => `<button class="sw-pet-choice" type="button" data-state="closed" data-pet="${pet}" aria-pressed="${String(pet === closedPet)}"><span class="sw-pet-thumb">${petIcons[pet]}</span><span>${PET_LABELS[pet]}</span></button>`).join('')}
         </div>
         <div class="sw-pet-group-heading"><strong>展开时显示</strong><span>保留原来的两只狗狗</span></div>
