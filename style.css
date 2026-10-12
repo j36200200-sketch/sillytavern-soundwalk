@@ -463,3 +463,22 @@
   #soundwalk-player-root .sw-list-head { padding-left:11px; padding-right:11px; }
   #soundwalk-player-root .sw-tools .sw-text-button { padding:5px 6px; font-size:11px; }
 }
+
+
+/* v1.3.14: explicit opt-in Kugou public-playlist metadata preview. */
+#soundwalk-player-root .sw-tools { flex-wrap:wrap; justify-content:flex-end; }
+#soundwalk-player-root .sw-external-form { padding:10px 15px; display:grid; gap:8px; background:#122b33; border-top:1px solid #ffffff18; overflow-y:auto; max-height:min(55dvh,430px); }
+#soundwalk-player-root .sw-external-form label { font-weight:600; font-size:12px; }
+#soundwalk-player-root .sw-external-link { width:100%; min-height:64px; resize:vertical; padding:8px; border-radius:8px; border:1px solid #ffffff2d; color:var(--sw-cream); background:#07161a70; font:12px/1.5 ui-sans-serif,system-ui,sans-serif; }
+#soundwalk-player-root .sw-external-hint, #soundwalk-player-root .sw-external-summary {font-size:10px; line-height:1.5; color:var(--sw-muted); margin:0;}
+#soundwalk-player-root .sw-external-status {font-size:11px; color:var(--sw-mint); line-height:1.5;}
+#soundwalk-player-root .sw-external-form .sw-form-actions button {border-radius:8px; background:#ffffff20; padding:7px 11px; font-size:12px; color:var(--sw-cream);}
+#soundwalk-player-root .sw-external-form .sw-form-actions button:disabled {opacity:.55;}
+#soundwalk-player-root .sw-external-form .sw-external-fetch, #soundwalk-player-root .sw-external-form .sw-external-import {background:var(--sw-mint)!important; color:#15332f!important; font-weight:600;}
+#soundwalk-player-root .sw-external-results {display:grid; gap:7px;}
+#soundwalk-player-root .sw-external-title {font-size:12px;}
+#soundwalk-player-root .sw-external-open {color:var(--sw-mint); text-decoration:underline; font-size:11px;}
+#soundwalk-player-root .sw-external-tracks {display:grid; max-height:180px; overflow-y:auto; gap:6px; padding-right:3px;}
+#soundwalk-player-root .sw-external-row {display:grid; gap:4px; font-size:11px; padding:7px; border-radius:8px; background:#ffffff0c;}
+#soundwalk-player-root .sw-external-row span {color:var(--sw-cream); overflow-wrap:anywhere;}
+#soundwalk-player-root .sw-external-audio {width:100%; min-width:0; font-size:11px; padding:6px 7px; color:var(--sw-cream); border-radius:6px; border:1px solid #ffffff24; background:#07161a70;}
