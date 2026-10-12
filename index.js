@@ -91,8 +91,17 @@ function normalizeRoleOrders(raw) {
     key.startsWith('avatar:') && key.length <= 310 && Array.isArray(value)).slice(0,300)
     .map(([key,ids]) => [key,[...new Set(ids.filter(id => typeof id === 'string' && id.length <= 150))].slice(0,MAX_TRACKS)]));
 }
+function normalizeWallpaperView(raw) {
+  const bounded = (value, min, max, fallback) => Number.isFinite(value)
+    ? Math.max(min, Math.min(max, Math.round(value))) : fallback;
+  return {
+    zoom: bounded(raw?.zoom, 100, 300, 100),
+    x: bounded(raw?.x, 0, 100, 50),
+    y: bounded(raw?.y, 0, 100, 50)
+  };
+}
 function readSettings() {
-  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', closedPet: 'cat', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0 };
+  const defaults = { tracks: [], index: 0, mode: 'all', volume: 0.72, orbPosition: {x: 0, y: 0.37}, followCharacter: false, autoRolePlayback: false, manualFilter: 'all', characterLabels: {}, roleOrders: {}, openPet: 'golden', closedPet: 'cat', brandIcon: 'cat', panelOpacity: 100, frostBlur: 0, wallpaperView: normalizeWallpaperView() };
   try {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!data || typeof data !== 'object') return defaults;
@@ -114,6 +123,7 @@ function readSettings() {
       closedPet: CLOSED_PETS.includes(data.closedPet) ? data.closedPet : 'cat',
       brandIcon: data.brandIcon === 'paw' ? 'paw' : 'cat',
       panelOpacity: Number.isFinite(data.panelOpacity) ? Math.max(0, Math.min(100, Math.round(data.panelOpacity))) : 100,
+      wallpaperView: normalizeWallpaperView(data.wallpaperView),
       // Older semi-transparent skins automatically gain a gentle frost once.
       // Fully opaque skins retain their original clear artwork on upgrade.
       frostBlur: Number.isFinite(data.frostBlur) ? Math.max(0, Math.min(30, Math.round(data.frostBlur))) :
@@ -149,9 +159,9 @@ async function fileAction(type, key, value) {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(DB_STORE, type === 'get' ? 'readonly' : 'readwrite');
       const request = tx.objectStore(DB_STORE)[type](...(type === 'put' ? [value, key] : [key]));
-      request.onsuccess = () => resolve(request.result);
+      tx.oncomplete = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error('本地音频读写失败'));
-      tx.onerror = () => reject(tx.error || new Error('本地存储事务失败'));
+      tx.onabort = () => reject(tx.error || new Error('本地存储事务失败'));
     });
   } finally { db.close(); }
 }
@@ -164,9 +174,9 @@ async function coverAction(type, key, value) {
       const transaction = db.transaction(COVER_STORE, type === 'get' ? 'readonly' : 'readwrite');
       const store = transaction.objectStore(COVER_STORE);
       const request = type === 'put' ? store.put(value, key) : store[type](key);
-      request.onsuccess = () => resolve(request.result);
+      transaction.oncomplete = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error('封面读写失败'));
-      transaction.onerror = () => reject(transaction.error || new Error('封面存储事务失败'));
+      transaction.onabort = () => reject(transaction.error || new Error('封面存储事务失败'));
     });
   } finally { db.close(); }
 }
@@ -273,6 +283,7 @@ function init() {
   let brandIcon = settings.brandIcon;
   let panelOpacity = settings.panelOpacity;
   let frostBlur = settings.frostBlur;
+  let wallpaperView = settings.wallpaperView;
   let wallpaperUrl = null;
   let wallpaperRevision = 0;
   let wallpaperSaving = false;
@@ -300,6 +311,7 @@ function init() {
       <span class="sw-orb-pet" aria-hidden="true">${petIcons[closedPet]}</span><span class="sw-orb-pulse" aria-hidden="true"></span>
     </button>
     <dialog id="soundwalk-player-modal" class="sw-panel" aria-label="听风播放器">
+      <div class="sw-panel-content">
       <header class="sw-header">
         <div class="sw-brand"><button class="sw-brand-switch" type="button" aria-label="切换听风的小猫头和猫爪图标" title="点击切换猫头和猫爪"><img class="sw-brand-image" src="${brandAssets[brandIcon]}" alt="" draggable="false" decoding="async" /></button><div><strong>听风</strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
         <div class="sw-header-actions"><button class="sw-icon sw-appearance-toggle" type="button" aria-label="播放器外观装扮" title="透明度与壁纸" aria-expanded="false" aria-controls="soundwalk-appearance">🎨</button><button class="sw-icon sw-pet-settings-toggle" type="button" aria-label="宠物图标设置" title="宠物图标设置" aria-expanded="false" aria-controls="soundwalk-pet-settings">🐾</button>
@@ -308,6 +320,16 @@ function init() {
       <section id="soundwalk-appearance" class="sw-appearance" aria-label="播放器外观装扮" hidden>
         <div class="sw-appearance-title"><strong>🎨 透明玻璃与自定义壁纸</strong><span>只影响播放器背景，不改变专辑封面</span></div>
         <div class="sw-wallpaper-actions"><button class="sw-wallpaper-select" type="button">从手机相册选择壁纸</button><button class="sw-wallpaper-reset" type="button">恢复默认背景</button></div>
+        <fieldset class="sw-wallpaper-view" disabled>
+          <legend>壁纸构图 · 等比缩放，自动铺满面板</legend>
+          <label class="sw-opacity-label" for="sw-wallpaper-zoom"><span>壁纸缩放</span><output class="sw-wallpaper-zoom-value" for="sw-wallpaper-zoom">100%</output></label>
+          <input id="sw-wallpaper-zoom" class="sw-wallpaper-zoom" type="range" min="100" max="300" step="5" value="100" aria-label="壁纸缩放" />
+          <label class="sw-opacity-label" for="sw-wallpaper-x"><span>左右位置</span><output class="sw-wallpaper-x-value" for="sw-wallpaper-x">50%</output></label>
+          <input id="sw-wallpaper-x" class="sw-wallpaper-x" type="range" min="0" max="100" step="1" value="50" aria-label="壁纸左右位置" />
+          <label class="sw-opacity-label" for="sw-wallpaper-y"><span>上下位置</span><output class="sw-wallpaper-y-value" for="sw-wallpaper-y">50%</output></label>
+          <input id="sw-wallpaper-y" class="sw-wallpaper-y" type="range" min="0" max="100" step="1" value="50" aria-label="壁纸上下位置" />
+          <button class="sw-wallpaper-center sw-text-button" type="button">恢复居中与自动铺满</button>
+        </fieldset>
         <label class="sw-opacity-label" for="sw-panel-opacity"><span>背景不透明度</span><output class="sw-opacity-value" for="sw-panel-opacity">100%</output></label>
         <input id="sw-panel-opacity" class="sw-panel-opacity" type="range" min="0" max="100" step="5" value="100" aria-label="播放器背景不透明度" />
         <label class="sw-opacity-label" for="sw-frost-blur"><span>毛玻璃虚化程度</span><output class="sw-blur-value" for="sw-frost-blur">0px</output></label>
@@ -360,13 +382,14 @@ function init() {
         <label>音频直链<input class="sw-url" type="url" placeholder="https://example.com/song.mp3"/></label>
         <div class="sw-form-actions"><button type="button" class="sw-cancel">取消</button><button type="button" class="sw-save">保存歌曲</button></div>
       </div>
-      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-backup-check" type="button">校验已有备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
+      <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-backup-check" type="button">校验已有备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><p class="sw-migration-hint">搬到另一个酒馆：在这里做「完整备份」，把 .swbackup 文件带过去，再点「恢复完整备份」。包含本地音乐、封面、壁纸、绑定、顺序和设置；恢复会替换目标歌单，请先备份目标数据。</p><p class="sw-migration-hint">网络歌单 JSON 只包含链接歌曲及其绑定和顺序，不含本地音频、图片或外观设置。角色头像文件名不同，需在目标酒馆重新绑定。</p><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
       <input class="sw-backup-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-backup-check-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <input class="sw-wallpaper-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+      </div>
       <p class="sw-notice" role="status" aria-live="polite"></p>
     </dialog>
     <dialog class="sw-cover-spotlight" aria-label="专辑封面欣赏">
@@ -402,14 +425,32 @@ function init() {
     panel.style.setProperty('--sw-panel-alpha', String(panelOpacity/100));
     panel.style.setProperty('--sw-frost-radius', `${frostBlur}px`);
     panel.style.setProperty('--sw-wallpaper-image', wallpaperUrl ? `url("${wallpaperUrl}")` : 'none');
+    panel.style.setProperty('--sw-wallpaper-zoom', String(wallpaperView.zoom / 100));
+    panel.style.setProperty('--sw-wallpaper-x', `${wallpaperView.x}%`);
+    panel.style.setProperty('--sw-wallpaper-y', `${wallpaperView.y}%`);
     panel.classList.toggle('sw-wallpaper-on',Boolean(wallpaperUrl));
     opacitySlider.value=String(panelOpacity);
     $('.sw-opacity-value').textContent=`${panelOpacity}%`;
     blurSlider.value=String(frostBlur);
     $('.sw-blur-value').textContent=`${frostBlur}px`;
     $('.sw-wallpaper-select').disabled=wallpaperSaving;
-    $('.sw-wallpaper-reset').disabled=wallpaperSaving || (!wallpaperUrl && panelOpacity===100);
+    $('.sw-wallpaper-reset').disabled=wallpaperSaving || (!wallpaperUrl && panelOpacity===100 && frostBlur===0);
+    $('.sw-wallpaper-view').disabled=wallpaperSaving || !wallpaperUrl;
+    for (const [key, value] of Object.entries(wallpaperView)) {
+      $(`.sw-wallpaper-${key}`).value=String(value);
+      $(`.sw-wallpaper-${key}-value`).textContent=`${value}%`;
+    }
   }
+  for (const key of ['zoom', 'x', 'y']) {
+    $(`.sw-wallpaper-${key}`).addEventListener('input', e => {
+      wallpaperView=normalizeWallpaperView({...wallpaperView, [key]:Number(e.target.value)});
+      applyAppearance();persist();
+    });
+  }
+  $('.sw-wallpaper-center').addEventListener('click', () => {
+    wallpaperView=normalizeWallpaperView();
+    applyAppearance();persist();
+  });
   appearanceToggle.addEventListener('click',()=>{
     appearanceBox.hidden=!appearanceBox.hidden;
     appearanceToggle.setAttribute('aria-expanded',String(!appearanceBox.hidden));
@@ -443,10 +484,11 @@ function init() {
       wallpaperRevision++;
       const old=wallpaperUrl;
       wallpaperUrl=URL.createObjectURL(blob);
-      applyAppearance();
+      wallpaperView=normalizeWallpaperView();
+      applyAppearance();persist();
       if(old) URL.revokeObjectURL(old);
       if(!isPanelOpen()) showPanel(true);
-      notice('壁纸已保存 ✨ 现在可以调节透明度');
+      notice('壁纸已保存 ✨ 可调节缩放、位置、透明度与虚化');
     }catch(e){notice(e.message||'壁纸保存失败，可能本地空间不足');}
     finally{wallpaperSaving=false;applyAppearance();}
   });
@@ -458,6 +500,7 @@ function init() {
       wallpaperRevision++;
       const old=wallpaperUrl;
       wallpaperUrl=null;panelOpacity=100;frostBlur=0;
+      wallpaperView=normalizeWallpaperView();
       applyAppearance();persist();
       if(old) URL.revokeObjectURL(old);
       notice('已恢复默认墨绿色背景');
@@ -590,7 +633,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, closedPet, brandIcon, panelOpacity, frostBlur}));
+        followCharacter, autoRolePlayback, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, closedPet, brandIcon, panelOpacity, frostBlur, wallpaperView}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -1271,7 +1314,7 @@ function init() {
         await addChecked('wallpaper',WALLPAPER_KEY,wallpaper,'播放器壁纸',WALLPAPER_MAX_BYTES);
       const unsigned={format:'soundwalk-complete',version:3,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
-          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur},entries};
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur,wallpaperView},entries};
       const metadataCrc32=checksumHex(new TextEncoder().encode(JSON.stringify(unsigned)));
       const meta={...unsigned,metadataCrc32};
       const payload=new TextEncoder().encode(JSON.stringify(meta));
@@ -1399,10 +1442,13 @@ function init() {
       brandIcon=meta.settings.brandIcon==='paw'?'paw':'cat';
       panelOpacity=Number.isFinite(meta.settings.panelOpacity)?Math.max(0,Math.min(100,Math.round(meta.settings.panelOpacity))):100;
       frostBlur=Number.isFinite(meta.settings.frostBlur)?Math.max(0,Math.min(30,Math.round(meta.settings.frostBlur))):(panelOpacity<100?12:0);
+      wallpaperView=normalizeWallpaperView(meta.settings.wallpaperView);
       if(meta.settings.orbPosition&&Number.isFinite(meta.settings.orbPosition.x)&&Number.isFinite(meta.settings.orbPosition.y)){
         orbPosition={x:Math.max(0,Math.min(1,meta.settings.orbPosition.x)),y:Math.max(0,Math.min(1,meta.settings.orbPosition.y))};
         positionOrb();
       }
+      for(const id of new Set([...oldTracks, ...tracks].map(t=>t.id)))
+        coverRevision.set(id,(coverRevision.get(id)||0)+1);
       for(const url of coverUrls.values())if(url)URL.revokeObjectURL(url);
       coverUrls.clear();coverPending.clear();coverQueue.length=0;
       currentIndex=-1;lastRoleSignature='';
@@ -1441,15 +1487,27 @@ function init() {
     try {await importFullBackup(file);} catch(e) {notice(e.message || '恢复备份失败，请检查文件');}
   });
   $('.sw-export').addEventListener('click', () => {
-    const tracks = settings.tracks.filter(item => item.kind === 'url').map(({title, artist, src, bindings}) => ({title, artist, src, bindings}));
-    const data = {format:'soundwalk-playlist', version:2, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, tracks};
+    const tracks = settings.tracks.filter(item => item.kind === 'url').map(({id, title, artist, src, bindings}) => ({id, title, artist, src, bindings}));
+    const localCount = settings.tracks.length - tracks.length;
+    if (!tracks.length) {
+      notice(localCount ? `这 ${localCount} 首都是本地音频，请使用「完整备份」搬到另一个酒馆；网络歌单不包含本地音乐。` : '歌单还没有歌曲，请先添加音乐');
+      return;
+    }
+    if (localCount && !window.confirm(`仅导出 ${tracks.length} 首网络歌曲。\n${localCount} 首本地音频及所有封面、壁纸、设置不会包含在 JSON 中。\n搬到另一个酒馆请取消并选择「完整备份」。继续只导出网络歌单？`)) return;
+    const ids = new Set(tracks.map(t => t.id));
+    const roles = new Set(tracks.flatMap(t => t.bindings || []));
+    const roleOrders = Object.fromEntries(Object.entries(normalizeRoleOrders(settings.roleOrders))
+      .filter(([key]) => roles.has(key)).map(([key, order]) => [key, order.filter(id => ids.has(id))]));
+    const characterLabels = Object.fromEntries(Object.entries(settings.characterLabels).filter(([key]) => roles.has(key)));
+    // Keep v2 readable by older extensions; stable IDs are an additive field.
+    const data = {format:'soundwalk-playlist', version:2, characterLabels, roleOrders, tracks};
     const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url; link.download = '听风-网络歌单.json';
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notice('已导出网络歌单及绑定；本地音频和自选封面不会包含在 JSON 中');
+    notice(`已导出 ${tracks.length} 首网络歌曲及绑定、顺序；本地音乐与图片请用完整备份迁移`);
   });
   $('.sw-import').addEventListener('click', () => jsonInput.click());
   jsonInput.addEventListener('change', async () => {
@@ -1461,7 +1519,13 @@ function init() {
       if (data?.format !== 'soundwalk-playlist' || !Array.isArray(data?.tracks)) {
         throw new Error('不是听风歌单 JSON 文件');
       }
-      if (data.version === 2 && data.roleOrders) settings.roleOrders = normalizeRoleOrders(data.roleOrders);
+      const validItems = data.tracks.slice(0, MAX_TRACKS).map(item => ({
+        sourceId:cleanText(item?.id, 100), track:validateTrack({ ...item, kind:'url', id:uid() })
+      })).filter(item => item.track);
+      if (!validItems.length) {
+        notice('这个 JSON 没有可导入的网络歌曲。本地音乐迁移请在原酒馆做「完整备份」，再在这里恢复 .swbackup 文件。');
+        return;
+      }
       if (data.version === 2 && data.characterLabels && typeof data.characterLabels === 'object') {
         for(const [key,name] of Object.entries(data.characterLabels).slice(0,300)) {
           if (key.startsWith('avatar:') && key.length<=310 && typeof name === 'string') settings.characterLabels[key] = cleanText(name,70);
@@ -1470,20 +1534,34 @@ function init() {
       const existing = new Map(settings.tracks.filter(t => t.kind === 'url').map(t => [t.src,t]));
       let count = 0;
       let rebound = 0;
-      for (const item of data.tracks.slice(0, MAX_TRACKS)) {
-        const parsed = validateTrack({ ...item, kind:'url', id: uid() });
-        if (!parsed) continue;
+      let duplicates = 0;
+      let skipped = data.tracks.length - validItems.length;
+      const idMap = new Map();
+      for (const {sourceId, track:parsed} of validItems) {
         const duplicate = existing.get(parsed.src);
         if (duplicate) {
+          duplicates++;
           const oldCount = (duplicate.bindings || []).length;
           duplicate.bindings = [...new Set([...(duplicate.bindings || []), ...parsed.bindings])];
           if (duplicate.bindings.length > oldCount) rebound++;
+          if (sourceId) idMap.set(sourceId,duplicate.id);
           continue;
         }
-        if (settings.tracks.length >= MAX_TRACKS) break;
+        if (settings.tracks.length >= MAX_TRACKS) { skipped++; continue; }
         settings.tracks.push(parsed); existing.set(parsed.src,parsed); count++;
+        if (sourceId) idMap.set(sourceId,parsed.id);
       }
-      refreshFilter(); notice(`已导入 ${count} 首网络歌曲，更新 ${rebound} 首的角色绑定`);
+      if (data.version === 2) {
+        const byId = new Map(settings.tracks.map(t => [t.id,t]));
+        for (const [role, order] of Object.entries(normalizeRoleOrders(data.roleOrders))) {
+          const mapped = [...new Set(order.map(id => idMap.get(id)).filter(id => byId.get(id)?.bindings.includes(role)))];
+          if (!mapped.length) continue; // Legacy JSON without IDs cannot map its old order.
+          // Preserve this browser's existing order, append new tracks in imported order.
+          const previous = settings.roleOrders[role] || [];
+          settings.roleOrders[role] = [...new Set([...previous,...mapped])].slice(0,MAX_TRACKS);
+        }
+      }
+      refreshFilter(); notice(`${count ? `已导入 ${count} 首网络歌曲` : `这 ${duplicates} 首网络歌曲已在歌单中`}，更新 ${rebound} 首的角色绑定${skipped ? `；跳过 ${skipped} 首无效或超出容量的歌曲` : ''}`);
     } catch (error) { notice(error.message || '歌单导入失败'); }
     finally { jsonInput.value = ''; }
   });

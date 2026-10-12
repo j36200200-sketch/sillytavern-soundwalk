@@ -96,7 +96,7 @@
   position: fixed !important; inset: 8px auto auto 8px !important;
   margin: 0 !important; padding: 0 !important;
   width: min(365px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 30px));
-  display: flex !important; flex-direction: column !important; overflow-y: auto !important; overflow-x: hidden !important;
+  display: flex !important; flex-direction: column !important; overflow: hidden !important;
   color: var(--sw-cream); background: linear-gradient(152deg, #24414d 0%, #15252f 45%, #11212b 100%) !important;
   border: 1px solid var(--sw-edge); border-radius: 20px;
   box-shadow: 0 24px 80px #040f16bf, inset 0 1px 0 #ffffff12;
@@ -107,6 +107,11 @@
 #soundwalk-player-root dialog.sw-panel[open],
 #soundwalk-player-root dialog.sw-panel.sw-fallback-open { display: flex !important; visibility: visible !important; opacity: 1 !important; transform: none !important; }
 #soundwalk-player-root dialog.sw-panel::backdrop { background: transparent; }
+/* The wallpaper stays on the dialog; only the contents scroll. */
+#soundwalk-player-root .sw-panel-content {
+  position:relative;z-index:1;min-height:0;min-width:0;
+  flex:1 1 auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+}
 #soundwalk-player-root .sw-header { min-height: 65px; padding: 14px 17px; display:flex; justify-content:space-between; align-items:center; gap:8px; border-bottom:1px solid #ffffff12; }
 #soundwalk-player-root .sw-brand { display:flex; gap:10px; align-items:center; }
 /* v1.2.6: transparent pressable brand mascot instead of the egg-shaped gradient dot. */
@@ -333,13 +338,10 @@
 }
 #soundwalk-player-root dialog.sw-panel.sw-wallpaper-on::before {
   background-image:var(--sw-wallpaper-image);
-  background-size:cover;background-position:center;background-repeat:no-repeat;
+  background-size:cover;background-position:var(--sw-wallpaper-x,50%) var(--sw-wallpaper-y,50%);background-repeat:no-repeat;
 }
 #soundwalk-player-root dialog.sw-panel.sw-wallpaper-on::after {
   background:linear-gradient(155deg,rgba(7,17,24,.39),rgba(8,17,25,.66));
-}
-#soundwalk-player-root dialog.sw-panel.sw-wallpaper-on > * {
-  position:relative;z-index:1;
 }
 #soundwalk-player-root .sw-appearance-toggle {font-size:17px;}
 #soundwalk-player-root .sw-appearance {
@@ -385,8 +387,8 @@
 /* Blur only the wallpaper painting, not the buttons, labels or track list. */
 #soundwalk-player-root dialog.sw-panel.sw-wallpaper-on::before {
   filter:blur(var(--sw-frost-radius));
-  transform:scale(1.16);
-  transform-origin:center center;
+  transform:scale(calc(1.16 * var(--sw-wallpaper-zoom,1)));
+  transform-origin:var(--sw-wallpaper-x,50%) var(--sw-wallpaper-y,50%);
   will-change:filter;
 }
 /* A dark smoke veil softens bright wallpaper without making the card white. */
@@ -412,3 +414,13 @@
   cursor:pointer;
 }
 #soundwalk-player-root .sw-frost-preset:hover {background:rgba(104,173,152,.34);}
+
+/* v1.3.7: saved wallpaper framing and explicit migration guidance. */
+#soundwalk-player-root .sw-wallpaper-view {
+  min-width:0;margin:0;padding:8px 0 0;border:0;display:grid;gap:7px;
+}
+#soundwalk-player-root .sw-wallpaper-view legend {font-size:11px;color:var(--sw-muted);}
+#soundwalk-player-root .sw-wallpaper-view:disabled {opacity:.5;}
+#soundwalk-player-root .sw-wallpaper-view input {width:100%;accent-color:var(--sw-mint);cursor:pointer;touch-action:pan-x;}
+#soundwalk-player-root .sw-wallpaper-view output {color:var(--sw-mint);font-size:12px;}
+#soundwalk-player-root .sw-migration-hint {margin:8px 0;font-size:11px;line-height:1.5;text-align:left;}
