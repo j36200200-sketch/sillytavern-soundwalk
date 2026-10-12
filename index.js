@@ -3,6 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
+const VERSION = '1.3.8';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -40,6 +41,16 @@ const petAssets = Object.freeze({
   snake: new URL('./assets/pets/pet-snake-v136.webp', import.meta.url).href,
   wolf: new URL('./assets/pets/pet-wolf-v136.webp', import.meta.url).href,
   samoyed: new URL('./assets/pets/pet-samoyed-v136.webp', import.meta.url).href,
+  rabbit: new URL('./assets/pets/pet-rabbit-v138.webp', import.meta.url).href,
+  whiteCat: new URL('./assets/pets/pet-white-cat-v138.webp', import.meta.url).href,
+  fox: new URL('./assets/pets/pet-fox-v138.webp', import.meta.url).href,
+  bear: new URL('./assets/pets/pet-bear-v138.webp', import.meta.url).href,
+  parrot: new URL('./assets/pets/pet-parrot-v138.webp', import.meta.url).href,
+  deer: new URL('./assets/pets/pet-deer-v138.webp', import.meta.url).href,
+  otter: new URL('./assets/pets/pet-otter-v138.webp', import.meta.url).href,
+  penguin: new URL('./assets/pets/pet-penguin-v138.webp', import.meta.url).href,
+  peacock: new URL('./assets/pets/pet-peacock-v138.webp', import.meta.url).href,
+  peacockFan: new URL('./assets/pets/pet-peacock-fan-v138.webp', import.meta.url).href,
 });
 const petIcons = {
   cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
@@ -49,12 +60,25 @@ const petIcons = {
   raven: `<img class="sw-pet-art" src="${petAssets.raven}" alt="细长小乌鸦" draggable="false" decoding="async" />`,
   snake: `<img class="sw-pet-art" src="${petAssets.snake}" alt="软萌小蛇" draggable="false" decoding="async" />`,
   wolf: `<img class="sw-pet-art" src="${petAssets.wolf}" alt="蓬松小狼" draggable="false" decoding="async" />`,
-  samoyed: `<img class="sw-pet-art" src="${petAssets.samoyed}" alt="雪白萨摩耶" draggable="false" decoding="async" />`
+  samoyed: `<img class="sw-pet-art" src="${petAssets.samoyed}" alt="雪白萨摩耶" draggable="false" decoding="async" />`,
+  rabbit: `<img class="sw-pet-art" src="${petAssets.rabbit}" alt="抱胡萝卜的小兔子" draggable="false" decoding="async" />`,
+  whiteCat: `<img class="sw-pet-art" src="${petAssets.whiteCat}" alt="软乎乎小白猫" draggable="false" decoding="async" />`,
+  fox: `<img class="sw-pet-art" src="${petAssets.fox}" alt="蓬松尾巴小狐狸" draggable="false" decoding="async" />`,
+  bear: `<img class="sw-pet-art" src="${petAssets.bear}" alt="抱蜂蜜罐的小熊" draggable="false" decoding="async" />`,
+  parrot: `<img class="sw-pet-art" src="${petAssets.parrot}" alt="彩色小鹦鹉" draggable="false" decoding="async" />`,
+  deer: `<img class="sw-pet-art" src="${petAssets.deer}" alt="软萌小鹿" draggable="false" decoding="async" />`,
+  otter: `<img class="sw-pet-art" src="${petAssets.otter}" alt="抱贝壳的小水獭" draggable="false" decoding="async" />`,
+  penguin: `<img class="sw-pet-art" src="${petAssets.penguin}" alt="张开翅膀的小企鹅" draggable="false" decoding="async" />`,
+  peacock: `<img class="sw-pet-art" src="${petAssets.peacock}" alt="收着尾巴的小孔雀" draggable="false" decoding="async" />`,
+  peacockFan: `<img class="sw-pet-art" src="${petAssets.peacockFan}" alt="开屏小孔雀" draggable="false" decoding="async" />`
 };
-const CLOSED_PETS = Object.freeze(['cat', 'golden', 'shepherd', 'owl', 'raven', 'snake', 'wolf', 'samoyed']);
+const CLOSED_PETS = Object.freeze(['cat', 'golden', 'shepherd', 'owl', 'raven', 'snake', 'wolf', 'samoyed',
+  'rabbit', 'whiteCat', 'fox', 'bear', 'deer', 'otter', 'penguin', 'parrot', 'peacock', 'peacockFan']);
 const PET_LABELS = Object.freeze({
   cat: '小黑猫', golden: '金毛小狗', shepherd: '黑背德牧', owl: '雪鸮',
-  raven: '乌鸦', snake: '小蛇', wolf: '小狼', samoyed: '萨摩耶'
+  raven: '乌鸦', snake: '小蛇', wolf: '小狼', samoyed: '萨摩耶',
+  rabbit: '小兔子', whiteCat: '小白猫', fox: '小狐狸', bear: '小熊', deer: '小鹿',
+  otter: '水獭', penguin: '企鹅', parrot: '鹦鹉', peacock: '孔雀', peacockFan: '开屏孔雀'
 });
 
 function uid() {
@@ -305,15 +329,17 @@ function init() {
 
   const root = document.createElement('section');
   root.id = ROOT_ID;
+  root.dataset.soundwalkVersion = VERSION;
   root.setAttribute('aria-label', '听风音乐播放器');
   root.innerHTML = `
     <button class="sw-orb" type="button" aria-label="打开听风音乐播放器" aria-expanded="false">
       <span class="sw-orb-pet" aria-hidden="true">${petIcons[closedPet]}</span><span class="sw-orb-pulse" aria-hidden="true"></span>
     </button>
     <dialog id="soundwalk-player-modal" class="sw-panel" aria-label="听风播放器">
+      <div class="sw-wallpaper-layer" aria-hidden="true"></div>
       <div class="sw-panel-content">
       <header class="sw-header">
-        <div class="sw-brand"><button class="sw-brand-switch" type="button" aria-label="切换听风的小猫头和猫爪图标" title="点击切换猫头和猫爪"><img class="sw-brand-image" src="${brandAssets[brandIcon]}" alt="" draggable="false" decoding="async" /></button><div><strong>听风</strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
+        <div class="sw-brand"><button class="sw-brand-switch" type="button" aria-label="切换听风的小猫头和猫爪图标" title="点击切换猫头和猫爪"><img class="sw-brand-image" src="${brandAssets[brandIcon]}" alt="" draggable="false" decoding="async" /></button><div><strong>听风 <span class="sw-version">v${VERSION}</span></strong><small>SOUNDWALK · 在故事里听歌</small></div></div>
         <div class="sw-header-actions"><button class="sw-icon sw-appearance-toggle" type="button" aria-label="播放器外观装扮" title="透明度与壁纸" aria-expanded="false" aria-controls="soundwalk-appearance">🎨</button><button class="sw-icon sw-pet-settings-toggle" type="button" aria-label="宠物图标设置" title="宠物图标设置" aria-expanded="false" aria-controls="soundwalk-pet-settings">🐾</button>
         <button class="sw-icon sw-close" type="button" aria-label="关闭播放器">${icons.close}</button></div>
       </header>
@@ -401,6 +427,9 @@ function init() {
   const $ = selector => root.querySelector(selector);
   const orb = $('.sw-orb');
   const panel = $('.sw-panel');
+  // Keep host dialog themes and a previously cached stylesheet from making
+  // the wallpaper's containing box scroll with its contents again.
+  panel.style.setProperty('overflow', 'hidden', 'important');
   const list = $('.sw-list');
   const form = $('.sw-form');
   const seek = $('.sw-seek');

@@ -9,6 +9,7 @@ const os = require('node:os');
 const {crc32} = require('node:zlib');
 
 const ROOT = path.resolve(__dirname, '..');
+const manifest = require('../manifest.json');
 const KEY = 'soundwalk-player-v1';
 const WALL = '__soundwalk_panel_wallpaper_v1__';
 const ROLE = 'avatar:regression-a.png';
@@ -33,7 +34,7 @@ async function server() {
       res.setHeader('Content-Type','text/html; charset=utf-8');
       res.end(`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>Soundwalk regression</title>
         <style>body{margin:0;background:repeating-linear-gradient(#59005d 0 30px,#f93 30px 60px);font-family:sans-serif;}main{padding:20px;color:white;min-height:1500px;}</style>
-        <link rel="stylesheet" href="/style.css"><main>测试聊天背景 · Testing chat backdrop</main><script type="module" src="/index.js"></script>`);
+        <link rel="stylesheet" href="/${manifest.css}"><main>测试聊天背景 · Testing chat backdrop</main><script type="module" src="/${manifest.js}"></script>`);
       return;
     }
     if (url.pathname.endsWith('.wav')) { res.setHeader('Content-Type','audio/wav'); res.end(wav); return; }
@@ -185,6 +186,63 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
         assert(await page.locator('.sw-panel-content').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
       }
     });
+    await test('all 18 original and new stickers load and new choices persist independently',async()=>{
+      if(await page.locator('.sw-appearance').isVisible())await page.locator('.sw-appearance-toggle').click();
+      await page.locator('.sw-pet-settings-toggle').click();
+      assert.equal(await page.locator('.sw-pet-closed-choices button').count(),18);
+      const choices={rabbit:'rabbit',whiteCat:'white-cat',fox:'fox',bear:'bear',deer:'deer',otter:'otter',penguin:'penguin',parrot:'parrot',peacock:'peacock',peacockFan:'peacock-fan'};
+      await until(()=>page.locator('.sw-pet-thumb img').evaluateAll(images=>images.every(img=>img.complete&&img.naturalWidth>0)));
+      await page.screenshot({path:path.join(artifacts,'pet-wardrobe.png')});
+      for(const [id,file] of Object.entries(choices)){
+        await page.locator(`.sw-pet-choice[data-pet="${id}"]`).click();
+        assert.equal((await settings(page)).closedPet,id);
+        assert.match(await page.locator('.sw-orb-pet img').getAttribute('src'),/pet-shepherd-v123/);
+        await page.locator('.sw-close').click();
+        assert((await page.locator('.sw-orb-pet img').getAttribute('src')).endsWith(`pet-${file}-v138.webp`));
+        await page.reload();assert.equal((await settings(page)).closedPet,id);
+        assert((await page.locator('.sw-orb-pet img').getAttribute('src')).endsWith(`pet-${file}-v138.webp`));
+        await open(page);await page.locator('.sw-pet-settings-toggle').click();
+      }
+      await page.locator('.sw-pet-choice[data-pet="owl"]').click();
+      await page.locator('.sw-pet-settings-toggle').click();
+    });
+    await test('versioned entry points refresh stale script and stylesheet URLs',async()=>{
+      const cache=await fixture(browser,target,{tracks:[],orbPosition:{x:.8,y:.94}},false);
+      const requested=[];cache.on('request',r=>requested.push(r.url()));
+      await cache.route('**/*',route=>{
+        const u=new URL(route.request().url());
+        if(u.pathname==='/index.js'&&!u.search)return route.fulfill({contentType:'text/javascript',body:'throw new Error("Stale unversioned script loaded");'});
+        if(u.pathname==='/style.css'&&!u.search)return route.fulfill({contentType:'text/css',body:'dialog.sw-panel {overflow-y:auto!important;}'});
+        return route.continue();
+      });
+      await cache.reload();await open(cache);
+      assert.equal(await cache.locator('.sw-version').textContent(),'v'+manifest.version);
+      assert.equal(await cache.locator('#soundwalk-player-root').getAttribute('data-soundwalk-version'),manifest.version);
+      assert(requested.some(url=>url.endsWith('/index.js?v='+manifest.version)));
+      assert(requested.some(url=>url.endsWith('/style.css?v='+manifest.version)));
+      assert.equal((await settings(cache)).closedPet,'cat');
+    });
+    await test('late legacy dialog/theme styles cannot scroll the wallpaper layer',async()=>{
+      await page.addStyleTag({content:`
+        #soundwalk-player-root dialog.sw-panel {overflow-y:auto!important;}
+        #soundwalk-player-root dialog.sw-panel.sw-wallpaper-on::before {content:'';position:absolute;inset:0;}
+        #soundwalk-player-root dialog > * {position:relative!important;}
+      `});
+      assert.equal(await page.locator('.sw-panel').evaluate(el=>getComputedStyle(el).overflowY),'hidden');
+      assert.equal(await page.locator('.sw-wallpaper-layer').evaluate(el=>getComputedStyle(el).position),'absolute');
+      assert.equal(await page.locator('.sw-panel').evaluate(el=>getComputedStyle(el,'::before').display),'none');
+      await page.locator('.sw-advanced > summary').click();await page.locator('.sw-role-manage').click();
+      await page.locator('.sw-panel-content').evaluate(el=>{el.scrollTop=0;el.style.visibility='hidden';});
+      await page.locator('.sw-notice').evaluate(el=>el.style.visibility='hidden');
+      const before=await page.locator('.sw-panel').screenshot();
+      await page.locator('.sw-panel-content').evaluate(el=>el.scrollTop=el.scrollHeight);
+      const after=await page.locator('.sw-panel').screenshot();assert(before.equals(after));
+      const panel=await page.locator('.sw-panel').boundingBox(),wall=await page.locator('.sw-wallpaper-layer').boundingBox();
+      assert(Math.abs(wall.height-(panel.height-2))<=1);
+      await page.locator('.sw-panel-content').evaluate(el=>el.style.visibility='');
+      await page.locator('.sw-notice').evaluate(el=>el.style.visibility='');
+      await page.locator('.sw-advanced > summary').click();
+    });
     let backup,network;
     await page.locator('.sw-storage > summary').click();
     await test('full backup includes all audio, covers, wallpaper, bindings, order and framing',async()=>{
@@ -201,6 +259,17 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       assert.deepEqual(s.wallpaperView,{zoom:175,x:20,y:80});assert.equal(s.closedPet,'owl');assert.equal(s.openPet,'shepherd');
       assert.equal(s.volume,.4);assert.equal(s.panelOpacity,75);assert.equal(s.frostBlur,16);
       assert.deepEqual(await media(dest),before);
+    });
+    await test('new pet choice survives full backup restore and reload',async()=>{
+      const length=Number(backup.subarray(6,18).toString()),meta=JSON.parse(backup.subarray(18,18+length));
+      delete meta.metadataCrc32;meta.settings.closedPet='peacockFan';
+      meta.metadataCrc32=crc32(Buffer.from(JSON.stringify(meta))).toString(16).padStart(8,'0');
+      const bytes=Buffer.from(JSON.stringify(meta));
+      const updated=Buffer.concat([Buffer.from('SWBK1\n'+String(bytes.length).padStart(12,'0')),bytes,backup.subarray(18+length)]);
+      const pet=await fixture(browser,target,{tracks:[],orbPosition:{x:.8,y:.94}},false);await open(pet);
+      await upload(pet,'.sw-backup-input',updated,'pet.swbackup');await until(async()=>/安全恢复完成/.test(await notice(pet)));
+      await pet.reload();assert.equal((await settings(pet)).closedPet,'peacockFan');
+      assert.match(await pet.locator('.sw-orb-pet img').getAttribute('src'),/pet-peacock-fan-v138/);
     });
     await test('restored local audio really plays, pauses, seeks, changes tracks and volume',async()=>{
       await dest.locator('.sw-main-play').click();await until(()=>dest.evaluate(()=>!window.testAudio.paused&&window.testAudio.currentTime>0));
