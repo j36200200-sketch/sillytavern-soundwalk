@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.13';
+const VERSION = '1.3.14';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -419,7 +419,7 @@ function init() {
         <button class="sw-icon sw-mute" type="button" aria-label="静音">${icons.volume}</button>
       </div>
       <div class="sw-volume-row"><span>音量</span><input class="sw-volume" aria-label="音量" type="range" min="0" max="100" value="72"/><label for="sw-sleep-select">定时停止</label><select id="sw-sleep-select" class="sw-sleep" aria-label="定时停止"><option value="0">关闭</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option></select></div>
-      <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button><button type="button" class="sw-text-button sw-add-batch" aria-expanded="false" title="批量导入音频直链">+ 批量</button></div></div>
+      <div class="sw-list-head"><strong>我的播放列表 <span class="sw-count">0</span></strong><div class="sw-tools"><button type="button" class="sw-text-button sw-add-link">+ 链接</button><button type="button" class="sw-text-button sw-add-file">+ 本地</button><button type="button" class="sw-text-button sw-add-batch" aria-expanded="false" title="批量导入音频直链">+ 批量</button><button type="button" class="sw-text-button sw-add-playlist" aria-expanded="false" title="识别酷狗分享歌单">+ 歌单</button></div></div>
       <div class="sw-search-row"><input class="sw-search" type="search" placeholder="搜索歌名 / 歌手" aria-label="搜索歌曲" maxlength="100" /><button class="sw-search-clear" type="button" aria-label="清除搜索" title="清除搜索">×</button></div>
       <details class="sw-advanced"><summary>⚙ 角色绑定与歌单设置</summary>
       <section class="sw-roles" aria-label="角色歌单设置">
@@ -438,6 +438,21 @@ function init() {
         <label>音频直链<input class="sw-url" type="url" placeholder="https://example.com/song.mp3"/></label>
         <div class="sw-form-actions"><button type="button" class="sw-cancel">取消</button><button type="button" class="sw-save">保存歌曲</button></div>
       </div>
+      <section class="sw-external-form" aria-label="酷狗歌单分享链接识别" hidden>
+        <label for="sw-external-link">识别酷狗音乐歌单分享链接</label>
+        <textarea id="sw-external-link" class="sw-external-link" rows="3" maxlength="2200" spellcheck="false" placeholder="粘贴酷狗歌单分享链接或包含链接的分享文案"></textarea>
+        <p class="sw-external-hint">点击识别时，公开歌单链接会发送给第三方 Playlist Out 解析服务。免登录可能只能预览前 10 首。不上传本地音乐、聊天或角色数据。</p>
+        <div class="sw-form-actions"><button type="button" class="sw-external-cancel">关闭</button><button type="button" class="sw-external-fetch">识别歌单</button></div>
+        <output class="sw-external-status" aria-live="polite"></output>
+        <div class="sw-external-results" hidden>
+          <strong class="sw-external-title"></strong>
+          <p class="sw-external-summary"></p>
+          <a class="sw-external-open" target="_blank" rel="noopener noreferrer" hidden>在酷狗打开歌单听歌 ↗</a>
+          <p class="sw-external-hint">识别到的是曲目名称，不是音频。要在《听风》内部播放，请给想导入的歌曲填写合法音频直链。留空的歌曲不会导入。</p>
+          <div class="sw-external-tracks"></div>
+          <div class="sw-form-actions"><button type="button" class="sw-external-import">导入已填写的直链</button></div>
+        </div>
+      </section>
       <div class="sw-batch-form" hidden>
         <label for="sw-batch-text">批量导入音频直链（每行一首）</label>
         <textarea class="sw-batch-text" id="sw-batch-text" rows="6" maxlength="80000" spellcheck="false" placeholder="https://example.com/001.mp3&#10;歌名 | https://example.com/002.mp3&#10;歌名 | 歌手 | https://example.com/003.flac"></textarea>
@@ -1405,6 +1420,7 @@ function init() {
   }
   function showForm(track = null) {
     closeBatchForm();
+    closeExternalForm();
     editId = track?.id || null;
     $('.sw-name').value = track?.title || '';
     $('.sw-singer').value = track?.artist === '未知歌手' ? '' : (track?.artist || '');
@@ -1522,6 +1538,7 @@ function init() {
   batchButton.addEventListener('click', () => {
     if (!batchForm.hidden) { closeBatchForm(); return; }
     hideForm();
+    closeExternalForm();
     batchForm.hidden = false;
     batchButton.setAttribute('aria-expanded', 'true');
     updateBatchPreview();
@@ -1542,6 +1559,164 @@ function init() {
     notice('已导入 ' + result.entries.length + ' 首网络歌曲；跳过重复 ' +
       result.duplicates + ' 首、无效 ' + result.invalid + ' 行、容量不足 ' +
       result.exceeded + ' 首' + (result.tooMany ? '、超过行数限制 ' + result.tooMany + ' 行' : ''));
+  });
+
+  // v1.3.14: optional public playlist metadata lookup; never treats platform
+  // share URLs or catalogue IDs as playable media. No login or account tokens.
+  const externalForm = $('.sw-external-form');
+  const externalButton = $('.sw-add-playlist');
+  const externalLink = $('.sw-external-link');
+  const externalFetch = $('.sw-external-fetch');
+  const externalStatus = $('.sw-external-status');
+  const externalResults = $('.sw-external-results');
+  const externalTracks = $('.sw-external-tracks');
+  const externalImport = $('.sw-external-import');
+  const externalOpen = $('.sw-external-open');
+  let externalAbort = null;
+  let externalRequestId = 0;
+  let externalPlaylist = null;
+  function closeExternalForm() {
+    externalRequestId++;
+    externalAbort?.abort();
+    externalAbort = null;
+    externalForm.hidden = true;
+    externalButton.setAttribute('aria-expanded', 'false');
+  }
+  function extractKugouPlaylistUrl(text) {
+    if (typeof text !== 'string' || text.length > 2200) return '';
+    const match = text.match(/https?:\/\/[^\s\u3000，,）)}<>《》"']+/i);
+    if (!match) return '';
+    try {
+      const link = new URL(match[0]);
+      if (link.protocol !== 'https:' && link.protocol !== 'http:') return '';
+      if (link.hostname !== 'kugou.com' && !link.hostname.endsWith('.kugou.com')) return '';
+      if (link.username || link.password) return '';
+      if (link.href.length > 1700) return '';
+      return link.href;
+    } catch { return ''; }
+  }
+  function normalizeExternalPlaylist(body) {
+    const playlist = body?.data?.kind === 'playlist' ? body.data.result : body?.data;
+    if (body?.success !== true || !playlist || !Array.isArray(playlist.tracks)) return null;
+    const tracks = playlist.tracks.slice(0, MAX_TRACKS).map((song,index) => ({
+      title: cleanText(song?.title || song?.name || '未命名歌曲 ' + (index + 1)),
+      artist: cleanText(song?.artist || song?.author || '未知歌手',70)
+    })).filter(song => song.title);
+    return tracks.length ? {
+      title: cleanText(playlist.name || playlist.title || '酷狗歌单'),
+      creator: cleanText(playlist.creator || '',70),
+      total: Number.isInteger(playlist.trackCount) ? playlist.trackCount : tracks.length,
+      tracks
+    } : null;
+  }
+  function renderExternalPlaylist(data,url) {
+    externalTracks.replaceChildren();
+    externalPlaylist = data;
+    $('.sw-external-title').textContent = data.title;
+    $('.sw-external-summary').textContent =
+      (data.creator ? '创建者：' + data.creator + ' · ' : '') +
+      '共 ' + data.total + ' 首，当前读取到 ' + data.tracks.length + ' 首' +
+      (data.total > data.tracks.length ? '（公开预览可能不完整）' : '') + '。';
+    externalOpen.href = url;
+    externalOpen.hidden = false;
+    data.tracks.forEach((track,index) => {
+      const row = document.createElement('div');
+      row.className = 'sw-external-row';
+      const info = document.createElement('span');
+      info.textContent = (index + 1) + '. ' + track.title + ' · ' + track.artist;
+      info.title = info.textContent;
+      const input = document.createElement('input');
+      input.type = 'url';
+      input.className = 'sw-external-audio';
+      input.placeholder = '该曲音频直链（可选）';
+      input.setAttribute('aria-label',track.title + ' 音频直链');
+      row.append(info,input);
+      externalTracks.append(row);
+    });
+    externalResults.hidden = false;
+    externalStatus.textContent = '歌单识别成功；音源需要自行补充。';
+  }
+  externalButton.addEventListener('click', () => {
+    if (!externalForm.hidden) {closeExternalForm();return;}
+    hideForm();
+    closeBatchForm();
+    externalForm.hidden = false;
+    externalButton.setAttribute('aria-expanded','true');
+    externalStatus.textContent = '';
+    requestAnimationFrame(positionPanelNearOrb);
+    externalLink.focus();
+  });
+  $('.sw-external-cancel').addEventListener('click',closeExternalForm);
+  externalFetch.addEventListener('click',async () => {
+    const url = extractKugouPlaylistUrl(externalLink.value);
+    if (!url) { externalStatus.textContent = '请粘贴酷狗音乐公开歌单的完整分享链接。'; return; }
+    externalRequestId++;
+    const requestId = externalRequestId;
+    externalAbort?.abort();
+    externalAbort = new AbortController();
+    const controller = externalAbort;
+    externalFetch.disabled = true;
+    externalResults.hidden = true;
+    externalPlaylist = null;
+    externalStatus.textContent = '正在识别公开歌单…';
+    const timeout = setTimeout(() => controller.abort(),22000);
+    try {
+      const endpoint = new URL('https://playlistout-api.lengxiqwq.com/api/v1/resolve');
+      endpoint.searchParams.set('q',url);
+      endpoint.searchParams.set('type','playlist');
+      endpoint.searchParams.set('platform','kugou');
+      const response = await fetch(endpoint.href,{signal:controller.signal,credentials:'omit',headers:{Accept:'application/json'}});
+      if (requestId !== externalRequestId) return;
+      if (!response.ok) {
+        externalStatus.textContent = response.status === 429
+          ? '请求过于频繁，请稍后重试。'
+          : '歌单识别暂时失败（HTTP ' + response.status + '），请稍后再试。';
+        return;
+      }
+      const data = normalizeExternalPlaylist(await response.json());
+      if (requestId !== externalRequestId) return;
+      if (!data) {
+        externalStatus.textContent = '未能读取歌单歌曲，可能是歌单不公开、授权受限或服务暂时不可用。';
+        return;
+      }
+      renderExternalPlaylist(data,url);
+    } catch(e) {
+      if (requestId !== externalRequestId) return;
+      externalStatus.textContent = e?.name === 'AbortError'
+        ? '识别超时，可以稍后重试。'
+        : '请求失败。可能是网络、浏览器跨域限制或解析服务不可访问。';
+    } finally {
+      clearTimeout(timeout);
+      if(requestId === externalRequestId){ externalFetch.disabled = false; externalAbort = null; }
+    }
+  });
+  externalImport.addEventListener('click', () => {
+    if (!externalPlaylist) return;
+    const inputs = [...externalTracks.querySelectorAll('.sw-external-audio')];
+    const existing = new Set(settings.tracks.filter(t => t.kind === 'url').map(t => t.src));
+    let added=0, skipped=0, invalid=0;
+    const wasEmpty = settings.tracks.length === 0;
+    for(let i=0;i<inputs.length;i++) {
+      const raw = inputs[i].value.trim();
+      if (!raw) continue;
+      const src = safeUrl(raw);
+      if (!src) { invalid++; continue; }
+      if(existing.has(src)) { skipped++; continue; }
+      if(settings.tracks.length >= MAX_TRACKS) {skipped++; continue;}
+      const song = externalPlaylist.tracks[i];
+      settings.tracks.push({id:uid(),kind:'url',title:song.title,artist:song.artist,src,
+        bindings:followCharacter && currentCharacter ? [currentCharacter.key] : []});
+      existing.add(src);added++;
+      inputs[i].value = '';
+    }
+    if (added) {
+      if (wasEmpty) void selectTrack(0,false,false);
+      else refreshFilter();
+    }
+    const message = '已导入 ' + added + ' 首可播放直链；跳过重复或容量不足 ' + skipped +
+      ' 首、无效链接 ' + invalid + ' 条。';
+    externalStatus.textContent = message;
+    notice(message);
   });
   $('.sw-add-link').addEventListener('click', () => showForm());
   $('.sw-cancel').addEventListener('click', hideForm);
