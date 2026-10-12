@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.14';
+const VERSION = '1.3.15';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -443,12 +443,20 @@ function init() {
         <textarea id="sw-external-link" class="sw-external-link" rows="3" maxlength="2200" spellcheck="false" placeholder="粘贴酷狗歌单分享链接或包含链接的分享文案"></textarea>
         <p class="sw-external-hint">点击识别时，公开歌单链接会发送给第三方 Playlist Out 解析服务。免登录可能只能预览前 10 首。不上传本地音乐、聊天或角色数据。</p>
         <div class="sw-form-actions"><button type="button" class="sw-external-cancel">关闭</button><button type="button" class="sw-external-fetch">识别歌单</button></div>
+        <div class="sw-external-json-tools"><span>超过 10 首？可在 <a href="https://playlistout.lengxiqwq.com" target="_blank" rel="noopener noreferrer">Playlist Out</a> 自行授权酷狗并导出完整 JSON，然后在这里导入。无需向《听风》提供账号密码或 Token。</span><button class="sw-text-button sw-external-load-json" type="button">导入完整歌单 JSON</button></div>
         <output class="sw-external-status" aria-live="polite"></output>
         <a class="sw-external-open" target="_blank" rel="noopener noreferrer" hidden>在酷狗打开歌单听歌 ↗</a>
         <div class="sw-external-results" hidden>
           <strong class="sw-external-title"></strong>
           <p class="sw-external-summary"></p>
-          <p class="sw-external-hint">识别到的是曲目名称，不是音频。要在《听风》内部播放，请给想导入的歌曲填写合法音频直链。留空的歌曲不会导入。</p>
+          <p class="sw-external-hint">这里只识别歌名和歌手，不会自动提供音源。将直链按歌曲原顺序贴到下面，核对后导入。</p>
+          <div class="sw-external-match">
+            <label for="sw-external-bulk">批量匹配直链（依照曲目顺序）</label>
+            <textarea id="sw-external-bulk" class="sw-external-bulk" rows="5" maxlength="80000" spellcheck="false" placeholder="https://example.com/song01.mp3&#10;https://example.com/song02.flac"></textarea>
+            <p class="sw-external-hint">每行一条直链，空行表示跳过该首。不要改变顺序；如果当前只有 10 首预览，不能直接贴 41 条。请先导入完整 JSON。</p>
+            <output class="sw-external-match-preview" aria-live="polite"></output>
+            <button class="sw-text-button sw-external-apply" type="button">按顺序填入直链</button>
+          </div>
           <div class="sw-external-tracks"></div>
           <div class="sw-form-actions"><button type="button" class="sw-external-import">导入已填写的直链</button></div>
         </div>
@@ -463,6 +471,7 @@ function init() {
       <details class="sw-storage"><summary>📦 备份、恢复与导入</summary><footer class="sw-footer"><div class="sw-file-tools"><button class="sw-backup-export" type="button">完整备份（含音乐、封面、壁纸）</button><button class="sw-backup-import" type="button">恢复完整备份</button><button class="sw-backup-check" type="button">校验已有备份</button><button class="sw-export" type="button">导出网络歌单</button><button class="sw-import" type="button">导入网络歌单</button></div><p class="sw-migration-hint">搬到另一个酒馆：在这里做「完整备份」，把 .swbackup 文件带过去，再点「恢复完整备份」。包含本地音乐、封面、壁纸、绑定、顺序和设置；恢复会替换目标歌单，请先备份目标数据。</p><p class="sw-migration-hint">网络歌单 JSON 只包含链接歌曲及其绑定和顺序，不含本地音频、图片或外观设置。角色头像文件名不同，需在目标酒馆重新绑定。</p><span>完整备份保存在你选择的本地文件中，不上传服务器</span></footer></details>
       <input class="sw-file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden />
       <input class="sw-json-input" type="file" accept="application/json,.json" hidden />
+      <input class="sw-external-json-input" type="file" accept="application/json,.json" hidden />
       <input class="sw-backup-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-backup-check-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
@@ -1572,6 +1581,10 @@ function init() {
   const externalTracks = $('.sw-external-tracks');
   const externalImport = $('.sw-external-import');
   const externalOpen = $('.sw-external-open');
+  const externalJsonInput = $('.sw-external-json-input');
+  const externalBulk = $('.sw-external-bulk');
+  const externalMatchPreview = $('.sw-external-match-preview');
+  const externalApply = $('.sw-external-apply');
   let externalAbort = null;
   let externalRequestId = 0;
   let externalPlaylist = null;
@@ -1609,16 +1622,96 @@ function init() {
       tracks
     } : null;
   }
-  function renderExternalPlaylist(data,url) {
+
+  // v1.3.15: Playlist Out metadata files are read locally only; never store auth tokens.
+  function normalizePlaylistOutFile(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        raw.generator !== 'PlaylistOut' || raw.platform !== 'kugou' ||
+        !Array.isArray(raw.tracks))
+      throw new Error('请使用 Playlist Out 导出的酷狗歌单 JSON，不要选择《听风》备份。');
+    if (!raw.tracks.length) throw new Error('这个 JSON 没有歌曲');
+    if (raw.tracks.length > MAX_TRACKS) throw new Error('单次最多处理 300 首，请先拆分歌单。');
+    const tracks = raw.tracks.map((song,i) => {
+      const title = cleanText(song?.title);
+      if (!title) throw new Error('第 ' + (i+1) + ' 首歌曲缺少名称，取消导入。');
+      return {title,artist:cleanText(song?.artist || '未知歌手',70)};
+    });
+    return {title:cleanText(raw.name || '酷狗歌单'),creator:cleanText(raw.creator || '',70),
+      total:Number.isInteger(raw.trackCount) && raw.trackCount >= tracks.length ? raw.trackCount : tracks.length,
+      tracks};
+  }
+  function parseOrderedAudioText(text, count) {
+    if (!text.trim()) return {urls:[],filled:0,error:'请粘贴音频直链'};
+    const lines = text.replace(/\r\n?/g,'\n').split('\n');
+    if (lines[lines.length-1] === '') lines.pop();
+    if (lines.length > count)
+      return {urls:[],filled:0,error:'当前只识别 '+count+' 首，却粘贴了 '+lines.length+
+        ' 行。请先补全歌单曲目，避免错配。'};
+    const urls = [];
+    for(let i=0;i<lines.length;i++) {
+      const value=lines[i].trim();
+      if (!value) {urls.push('');continue;}
+      const url=safeUrl(value);
+      if (!url) return {urls:[],filled:0,error:'第 '+(i+1)+' 行不是有效的 HTTP(S) 直链。'};
+      urls.push(url);
+    }
+    return {urls,filled:urls.filter(Boolean).length,error:''};
+  }
+  function updateOrderedAudioPreview() {
+    if (!externalPlaylist) return;
+    const mapped=parseOrderedAudioText(externalBulk.value,externalPlaylist.tracks.length);
+    externalApply.disabled=!!mapped.error;
+    if (mapped.error) {externalMatchPreview.textContent=mapped.error;return;}
+    const names=mapped.urls.flatMap((url,i)=>url?[(i+1)+'. '+externalPlaylist.tracks[i].title]:[]).slice(0,3).join('、');
+    externalMatchPreview.textContent='将按顺序填入 '+mapped.filled+' 条直链'+(names?'：'+names:'')+'；请逐首核对。';
+  }
+  externalBulk.addEventListener('input',updateOrderedAudioPreview);
+  externalApply.addEventListener('click',()=>{
+    if (!externalPlaylist) return;
+    const mapped=parseOrderedAudioText(externalBulk.value,externalPlaylist.tracks.length);
+    if (mapped.error) {externalMatchPreview.textContent=mapped.error;return;}
+    const inputs=[...externalTracks.querySelectorAll('.sw-external-audio')];
+    mapped.urls.forEach((url,i)=>{if(url) inputs[i].value=url;});
+    externalStatus.textContent='已按曲目顺序填写 '+mapped.filled+' 条直链。请核对各首歌的链接，再点击导入。';
+  });
+  $('.sw-external-load-json').addEventListener('click',()=>{
+    externalJsonInput.value=''; externalJsonInput.click();
+  });
+  externalJsonInput.addEventListener('change',async()=>{
+    const file=externalJsonInput.files?.[0];
+    if(!file)return;
+    try{
+      if(file.size > 2000000 || !/\.json$/i.test(file.name))
+        throw new Error('请选择小于 2MB 的 JSON 歌单文件');
+      const raw=JSON.parse(await file.text());
+      const data=normalizePlaylistOutFile(raw);
+      if(externalPlaylist && !window.confirm('这将替换当前预览的歌单及未提交的直链，继续吗？'))return;
+      externalRequestId++;
+      externalAbort?.abort();externalAbort=null;externalFetch.disabled=false;
+      renderExternalPlaylist(data,extractKugouPlaylistUrl(raw.sourceUrl || ''),'file');
+      if(!isPanelOpen())showPanel(true);
+      requestAnimationFrame(positionPanelNearOrb);
+    }catch(e){
+      externalStatus.textContent=e instanceof SyntaxError?'文件 JSON 格式不正确':(e?.message || '导入歌单失败');
+    }finally{externalJsonInput.value='';}
+  });
+  function renderExternalPlaylist(data,url,source='api') {
     externalTracks.replaceChildren();
     externalPlaylist = data;
+    externalBulk.value = '';
+    externalMatchPreview.textContent = '粘贴直链后按顺序匹配';
+    externalApply.disabled = true;
     $('.sw-external-title').textContent = data.title;
     $('.sw-external-summary').textContent =
       (data.creator ? '创建者：' + data.creator + ' · ' : '') +
       '共 ' + data.total + ' 首，当前读取到 ' + data.tracks.length + ' 首' +
-      (data.total > data.tracks.length ? '（公开预览可能不完整）' : '') + '。';
-    externalOpen.href = url;
-    externalOpen.hidden = false;
+      (data.total > data.tracks.length ? '（只得到部分曲目，可导入完整 JSON）' : '') +
+      (source === 'file' ? ' · 来自本地 JSON' : '') + '。';
+    if (url && extractKugouPlaylistUrl(url)) {
+      externalOpen.href = url; externalOpen.hidden = false;
+    } else {
+      externalOpen.removeAttribute('href'); externalOpen.hidden = true;
+    }
     data.tracks.forEach((track,index) => {
       const row = document.createElement('div');
       row.className = 'sw-external-row';
@@ -1634,7 +1727,9 @@ function init() {
       externalTracks.append(row);
     });
     externalResults.hidden = false;
-    externalStatus.textContent = '歌单识别成功；音源需要自行补充。';
+    externalStatus.textContent = source === 'file'
+      ? '完整曲目清单已从本地 JSON 读取，请批量匹配直链。'
+      : '歌单识别成功，音频直链需自行补充。';
   }
   externalButton.addEventListener('click', () => {
     if (!externalForm.hidden) {closeExternalForm();return;}
@@ -1644,6 +1739,9 @@ function init() {
     externalButton.setAttribute('aria-expanded','true');
     externalOpen.hidden = true;
     externalResults.hidden = true;
+    externalPlaylist = null;
+    externalBulk.value = '';
+    externalMatchPreview.textContent = '';
     externalStatus.textContent = '';
     requestAnimationFrame(positionPanelNearOrb);
     externalLink.focus();
