@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.10';
+const VERSION = '1.3.11';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -314,8 +314,11 @@ function init() {
   let isPendingPlay = false;
   let expectedSource = '';
   let networkLoading = false;
+  let loadingForSeek = false;
   let loadingSince = 0;
   let loadingTimer = null;
+  let seekCheckTimer = null;
+  let seekSequence = -1;
   let lastMediaTime = 0;
   let objectUrl = null;
   let sleepHandle = null;
@@ -805,7 +808,7 @@ function init() {
     const elapsed = networkLoading ? performance.now() - loadingSince : 0;
     const message = elapsed >= 20000 ? '加载较久，可取消后重试' : elapsed >= 15000
       ? '网络似乎不太稳定，仍在尝试加载' : elapsed >= 5000
-      ? '网络较慢，正在努力加载…' : '正在加载音乐…';
+      ? '网络较慢，正在努力加载…' : loadingForSeek ? '正在缓冲…' : '正在加载音乐…';
     const label = $('.sw-load-text');
     if (label.textContent !== message) label.textContent = message;
     $('.sw-load-status').hidden = !networkLoading;
@@ -814,7 +817,8 @@ function init() {
   }
   function clearNetworkLoading() {
     clearInterval(loadingTimer);loadingTimer = null;
-    networkLoading = false;loadingSince = 0;
+    clearTimeout(seekCheckTimer);seekCheckTimer = null;seekSequence = -1;
+    networkLoading = false;loadingForSeek = false;loadingSince = 0;
     renderLoading();
   }
   function confirmPlaying() {
@@ -822,8 +826,9 @@ function init() {
     isPendingPlay = false;
     clearNetworkLoading();renderTransport();
   }
-  function startNetworkLoading() {
+  function startNetworkLoading(forSeek = false) {
     if (!playIntent || settings.tracks[currentIndex]?.kind !== 'url' || !expectedSource || audio.src !== expectedSource) return;
+    if (forSeek) loadingForSeek = true;
     if (!networkLoading) {
       networkLoading = true;loadingSince = performance.now();lastMediaTime = audio.currentTime;
       const seq = playSequence;
@@ -837,6 +842,32 @@ function init() {
       }, 1000);
     }
     renderLoading();renderTransport();
+  }
+  function inspectSeekLoading() {
+    if (!playIntent || !hasCurrentMedia() || settings.tracks[currentIndex]?.kind !== 'url' || audio.ended || audio.error || audio.readyState >= 3) return;
+    // Cached jumps can briefly lower readyState while the decoder seeks.
+    // A completed seek with no future data really does need to wait.
+    if (audio.seeking) {
+      const buffered = audio.buffered, time = audio.currentTime;
+      for (let i = 0; i < buffered.length; i++) {
+        if (time >= buffered.start(i) && time < buffered.end(i)) return;
+      }
+    }
+    startNetworkLoading(true);
+  }
+  function syncSeekLoading() {
+    lastMediaTime = audio.currentTime;
+    clearTimeout(seekCheckTimer);seekCheckTimer = null;
+    if (!playIntent || !hasCurrentMedia() || settings.tracks[currentIndex]?.kind !== 'url') return;
+    const seq = playSequence, request = playRequest;
+    seekSequence = seq;
+    inspectSeekLoading();
+    // Some browsers update readiness after currentTime and omit waiting.
+    // This only checks feedback; it never starts or resumes playback.
+    seekCheckTimer = setTimeout(() => {
+      seekCheckTimer = null;
+      if (seq === playSequence && request === playRequest) inspectSeekLoading();
+    }, 150);
   }
   function pausePlayback() {
     ++playRequest;playIntent = false;isPendingPlay = false;
@@ -1783,7 +1814,7 @@ function init() {
   seek.addEventListener('input', () => {
     if (Number.isFinite(audio.duration) && audio.duration > 0) {
       audio.currentTime = (+seek.value / 1000) * audio.duration;
-      lastMediaTime = audio.currentTime;
+      syncSeekLoading();
     }
   });
   $('.sw-volume').addEventListener('input', e => {
@@ -1808,7 +1839,10 @@ function init() {
   audio.addEventListener('play', renderTransport);
   for (const event of ['loadstart', 'waiting', 'stalled']) {
     audio.addEventListener(event, () => {
-      if (hasCurrentMedia() && playIntent && (isPendingPlay || audio.readyState < 3 || audio.seeking)) startNetworkLoading();
+      if (hasCurrentMedia() && playIntent && (isPendingPlay || audio.readyState < 3)) {
+        if (audio.seeking && !isPendingPlay) inspectSeekLoading();
+        else startNetworkLoading();
+      }
     });
   }
   audio.addEventListener('canplay', renderTransport);
@@ -1823,7 +1857,8 @@ function init() {
     ++playRequest;playIntent = false;isPendingPlay = false;clearNetworkLoading();
     advance(1, true);
   });
-  for (const event of ['seeking', 'seeked']) audio.addEventListener(event, () => {lastMediaTime = audio.currentTime;});
+  audio.addEventListener('seeking', () => {if (audio.seeking) syncSeekLoading();});
+  audio.addEventListener('seeked', () => {if (seekSequence === playSequence) syncSeekLoading();});
   audio.addEventListener('timeupdate', () => {
     if (networkLoading && !audio.seeking && audio.readyState >= 3 && audio.currentTime > lastMediaTime) confirmPlaying();
     lastMediaTime = audio.currentTime;
