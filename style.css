@@ -482,3 +482,15 @@
 #soundwalk-player-root .sw-external-row {display:grid; gap:4px; font-size:11px; padding:7px; border-radius:8px; background:#ffffff0c;}
 #soundwalk-player-root .sw-external-row span {color:var(--sw-cream); overflow-wrap:anywhere;}
 #soundwalk-player-root .sw-external-audio {width:100%; min-width:0; font-size:11px; padding:6px 7px; color:var(--sw-cream); border-radius:6px; border:1px solid #ffffff24; background:#07161a70;}
+
+
+/* v1.3.15: local full-playlist JSON and ordered audio URL matching. */
+#soundwalk-player-root .sw-external-json-tools {display:grid;gap:7px;font-size:10px;color:var(--sw-muted);line-height:1.5;padding:8px 9px;background:#ffffff0d;border-radius:9px;}
+#soundwalk-player-root .sw-external-json-tools a {color:var(--sw-mint);text-decoration:underline;}
+#soundwalk-player-root .sw-external-json-tools .sw-external-load-json {justify-self:start;font-size:11px;padding:6px 9px;background:#ffffff22;}
+#soundwalk-player-root .sw-external-match {display:grid;gap:7px;padding:9px;background:#ffffff0e;border:1px solid #ffffff1e;border-radius:9px;}
+#soundwalk-player-root .sw-external-match label {font-size:11px;color:var(--sw-cream);}
+#soundwalk-player-root .sw-external-bulk {min-height:100px;width:100%;padding:9px;background:#07161a70;color:var(--sw-cream);border:1px solid #ffffff2d;border-radius:8px;resize:vertical;font:11px/1.45 ui-monospace,monospace;overflow-wrap:anywhere;}
+#soundwalk-player-root .sw-external-match-preview {font-size:10px;color:var(--sw-mint);line-height:1.6;overflow-wrap:anywhere;}
+#soundwalk-player-root .sw-external-match .sw-external-apply {justify-self:start;padding:6px 10px;background:#ffffff21;}
+#soundwalk-player-root .sw-external-match .sw-external-apply:disabled {opacity:.45;cursor:not-allowed;}
