@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.8';
+const VERSION = '1.3.9';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -51,6 +51,12 @@ const petAssets = Object.freeze({
   penguin: new URL('./assets/pets/pet-penguin-v138.webp', import.meta.url).href,
   peacock: new URL('./assets/pets/pet-peacock-v138.webp', import.meta.url).href,
   peacockFan: new URL('./assets/pets/pet-peacock-fan-v138.webp', import.meta.url).href,
+  jellyfish: new URL('./assets/pets/pet-jellyfish-v139.webp', import.meta.url).href,
+  spider: new URL('./assets/pets/pet-spider-v139.webp', import.meta.url).href,
+  beagle: new URL('./assets/pets/pet-beagle-v139.webp', import.meta.url).href,
+  orca: new URL('./assets/pets/pet-orca-v139.webp', import.meta.url).href,
+  octopus: new URL('./assets/pets/pet-octopus-v139.webp', import.meta.url).href,
+  blackOctopus: new URL('./assets/pets/pet-black-octopus-v139.webp', import.meta.url).href,
 });
 const petIcons = {
   cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
@@ -70,15 +76,23 @@ const petIcons = {
   otter: `<img class="sw-pet-art" src="${petAssets.otter}" alt="抱贝壳的小水獭" draggable="false" decoding="async" />`,
   penguin: `<img class="sw-pet-art" src="${petAssets.penguin}" alt="张开翅膀的小企鹅" draggable="false" decoding="async" />`,
   peacock: `<img class="sw-pet-art" src="${petAssets.peacock}" alt="收着尾巴的小孔雀" draggable="false" decoding="async" />`,
-  peacockFan: `<img class="sw-pet-art" src="${petAssets.peacockFan}" alt="开屏小孔雀" draggable="false" decoding="async" />`
+  peacockFan: `<img class="sw-pet-art" src="${petAssets.peacockFan}" alt="开屏小孔雀" draggable="false" decoding="async" />`,
+  jellyfish: `<img class="sw-pet-art" src="${petAssets.jellyfish}" alt="透明粉色小水母" draggable="false" decoding="async" />`,
+  spider: `<img class="sw-pet-art" src="${petAssets.spider}" alt="毛茸茸长腿小蜘蛛" draggable="false" decoding="async" />`,
+  beagle: `<img class="sw-pet-art" src="${petAssets.beagle}" alt="抬爪比格小狗" draggable="false" decoding="async" />`,
+  orca: `<img class="sw-pet-art" src="${petAssets.orca}" alt="黑白小虎鲸" draggable="false" decoding="async" />`,
+  octopus: `<img class="sw-pet-art" src="${petAssets.octopus}" alt="橙色小章鱼" draggable="false" decoding="async" />`,
+  blackOctopus: `<img class="sw-pet-art" src="${petAssets.blackOctopus}" alt="长触手黑色章鱼" draggable="false" decoding="async" />`
 };
 const CLOSED_PETS = Object.freeze(['cat', 'golden', 'shepherd', 'owl', 'raven', 'snake', 'wolf', 'samoyed',
-  'rabbit', 'whiteCat', 'fox', 'bear', 'deer', 'otter', 'penguin', 'parrot', 'peacock', 'peacockFan']);
+  'rabbit', 'whiteCat', 'fox', 'bear', 'deer', 'otter', 'penguin', 'parrot', 'peacock', 'peacockFan',
+  'jellyfish', 'spider', 'beagle', 'orca', 'octopus', 'blackOctopus']);
 const PET_LABELS = Object.freeze({
   cat: '小黑猫', golden: '金毛小狗', shepherd: '黑背德牧', owl: '雪鸮',
   raven: '乌鸦', snake: '小蛇', wolf: '小狼', samoyed: '萨摩耶',
   rabbit: '小兔子', whiteCat: '小白猫', fox: '小狐狸', bear: '小熊', deer: '小鹿',
-  otter: '水獭', penguin: '企鹅', parrot: '鹦鹉', peacock: '孔雀', peacockFan: '开屏孔雀'
+  otter: '水獭', penguin: '企鹅', parrot: '鹦鹉', peacock: '孔雀', peacockFan: '开屏孔雀',
+  jellyfish: '水母', spider: '小蜘蛛', beagle: '比格犬', orca: '虎鲸', octopus: '小章鱼', blackOctopus: '黑章鱼'
 });
 
 function uid() {
