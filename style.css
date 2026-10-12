@@ -443,3 +443,23 @@
 #soundwalk-player-root .sw-wallpaper-view input {width:100%;accent-color:var(--sw-mint);cursor:pointer;touch-action:pan-x;}
 #soundwalk-player-root .sw-wallpaper-view output {color:var(--sw-mint);font-size:12px;}
 #soundwalk-player-root .sw-migration-hint {margin:8px 0;font-size:11px;line-height:1.5;text-align:left;}
+
+
+/* v1.3.13: compact batch URL importer, mobile friendly. */
+#soundwalk-player-root .sw-list-head { min-width:0; }
+#soundwalk-player-root .sw-list-head strong { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+#soundwalk-player-root .sw-tools { flex-shrink:0; }
+#soundwalk-player-root .sw-tools .sw-text-button { padding:5px 7px; white-space:nowrap; }
+#soundwalk-player-root .sw-batch-form { padding:11px 17px; display:grid; gap:8px; background:#122b33; border-top:1px solid #ffffff15; max-height:min(42dvh,330px); overflow-y:auto; }
+#soundwalk-player-root .sw-batch-form label { font-size:12px; font-weight:600; color:var(--sw-cream); }
+#soundwalk-player-root .sw-batch-form textarea { display:block; width:100%; min-height:118px; resize:vertical; padding:9px; border:1px solid #ffffff2d; border-radius:8px; background:#07161a70; color:var(--sw-cream); font:12px/1.5 ui-monospace,monospace; overflow-wrap:anywhere; }
+#soundwalk-player-root .sw-batch-form textarea::placeholder { color:#b7c4c3aa; }
+#soundwalk-player-root .sw-batch-hint { margin:0; font-size:10px; line-height:1.5; color:var(--sw-muted); }
+#soundwalk-player-root .sw-batch-preview { font-size:11px; color:var(--sw-mint); line-height:1.6; }
+#soundwalk-player-root .sw-batch-form .sw-form-actions button { padding:7px 11px; border-radius:8px; background:#ffffff20; color:var(--sw-cream); font-size:12px; }
+#soundwalk-player-root .sw-batch-form .sw-form-actions .sw-batch-save { background:var(--sw-mint); color:#15332f; font-weight:600; }
+#soundwalk-player-root .sw-batch-form .sw-form-actions .sw-batch-save:disabled { opacity:.45; cursor:not-allowed; }
+@media(max-width:360px) {
+  #soundwalk-player-root .sw-list-head { padding-left:11px; padding-right:11px; }
+  #soundwalk-player-root .sw-tools .sw-text-button { padding:5px 6px; font-size:11px; }
+}
