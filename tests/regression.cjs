@@ -140,6 +140,10 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
   const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE_PATH||undefined,
     args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   try {
+    if(process.env.NETWORK_ONLY==='1') {
+      await require('./network-playback.cjs')({browser,origin,fixture,test,until,range,open,upload,wav,artifacts});
+      assert.deepEqual(errors,[]);console.log(`${results.length} network regression checks passed`);return;
+    }
     const tracks=[
       {id:'local-1',title:'Local A',artist:'本地文件',kind:'file',bindings:[ROLE,OTHER]},
       {id:'local-2',title:'Local B',artist:'本地文件',kind:'file',bindings:[ROLE]},
@@ -363,6 +367,7 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       assert.deepEqual(after.covers,before.covers.filter(([id])=>id!==WALL));
       const s=await settings(local);assert.deepEqual(s.wallpaperView,{zoom:100,x:50,y:50});assert.equal(s.panelOpacity,100);assert.equal(s.frostBlur,0);
     });
+    await require('./network-playback.cjs')({browser,origin,fixture,test,until,range,open,upload,wav,artifacts});
     assert.deepEqual(errors,[]);
     console.log(`${results.length} browser regression checks passed; artifacts: ${artifacts}`);
   }finally{for(const ctx of contexts)await ctx.close();await browser.close();for(const s of servers)s.close();}

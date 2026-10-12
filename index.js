@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.9';
+const VERSION = '1.3.10';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -309,6 +309,14 @@ function init() {
   let mode = settings.mode;
   let previousVolume = settings.volume || 0.72;
   let playSequence = 0;
+  let playRequest = 0;
+  let playIntent = false;
+  let isPendingPlay = false;
+  let expectedSource = '';
+  let networkLoading = false;
+  let loadingSince = 0;
+  let loadingTimer = null;
+  let lastMediaTime = 0;
   let objectUrl = null;
   let sleepHandle = null;
   let sleepDeadline = 0;
@@ -391,7 +399,7 @@ function init() {
       </section>
       <div class="sw-now">
         <button class="sw-scene" type="button" aria-label="放大专辑封面" title="点击放大专辑封面"><span class="sw-sun"></span><span class="sw-hill sw-hill-a"></span><span class="sw-hill sw-hill-b"></span><span class="sw-stars">✧</span><img class="sw-now-cover" alt="" hidden /></button>
-        <div class="sw-now-title"><strong class="sw-title">歌单还是空的</strong><span class="sw-artist">添加链接或本地音频开始播放</span><div class="sw-cover-controls"><button class="sw-cover-change" type="button">选择封面</button><button class="sw-cover-reset" type="button">恢复默认</button></div></div>
+        <div class="sw-now-title"><strong class="sw-title">歌单还是空的</strong><div class="sw-audio-meta"><span class="sw-artist">添加链接或本地音频开始播放</span><span class="sw-load-status" role="status" aria-live="polite" hidden><span class="sw-loading-spinner" aria-hidden="true"></span><span class="sw-load-text"></span></span></div><div class="sw-cover-controls"><button class="sw-cover-change" type="button">选择封面</button><button class="sw-cover-reset" type="button">恢复默认</button></div></div>
       </div>
       <div class="sw-progress-area">
         <input class="sw-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="播放进度" />
@@ -774,9 +782,11 @@ function init() {
     return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   }
   function renderTransport() {
-    const playing = !audio.paused && !audio.ended;
-    playButton.innerHTML = playing ? icons.pause : icons.play;
-    playButton.setAttribute('aria-label', playing ? '暂停' : '播放');
+    const playing = playIntent && !isPendingPlay && !networkLoading && !audio.paused && !audio.ended;
+    playButton.innerHTML = playIntent ? icons.pause : icons.play;
+    playButton.setAttribute('aria-label', networkLoading ? '取消加载' : playIntent ? '暂停' : '播放');
+    playButton.setAttribute('aria-busy', String(networkLoading));
+    playButton.title = networkLoading ? '正在加载，点击取消本次播放请求；取消后可再次点击重试' : playIntent ? '暂停' : '播放';
     orb.classList.toggle('sw-active', playing);
     $('.sw-mute').innerHTML = audio.volume === 0 ? icons.mute : icons.volume;
     $('.sw-volume').value = String(Math.round(audio.volume * 100));
@@ -786,6 +796,57 @@ function init() {
     $('.sw-mode').textContent = ({all:'↻', one:'①', shuffle:'⤨'})[effective];
     $('.sw-mode').setAttribute('aria-label', roleSequence ? '角色自动播放：按绑定歌单顺序循环' : `${labels[mode]}，点击切换播放模式`);
     $('.sw-mode').title = roleSequence ? '角色自动播放固定顺序播放，关闭自动开关即可更改播放模式' : labels[mode];
+  }
+  function hasCurrentMedia() {
+    return Boolean(expectedSource && audio.src === expectedSource &&
+      (!audio.currentSrc || audio.currentSrc === expectedSource));
+  }
+  function renderLoading() {
+    const elapsed = networkLoading ? performance.now() - loadingSince : 0;
+    const message = elapsed >= 20000 ? '加载较久，可取消后重试' : elapsed >= 15000
+      ? '网络似乎不太稳定，仍在尝试加载' : elapsed >= 5000
+      ? '网络较慢，正在努力加载…' : '正在加载音乐…';
+    const label = $('.sw-load-text');
+    if (label.textContent !== message) label.textContent = message;
+    $('.sw-load-status').hidden = !networkLoading;
+    $('.sw-load-status').title = message;
+    $('.sw-audio-meta').classList.toggle('sw-is-loading', networkLoading);
+  }
+  function clearNetworkLoading() {
+    clearInterval(loadingTimer);loadingTimer = null;
+    networkLoading = false;loadingSince = 0;
+    renderLoading();
+  }
+  function confirmPlaying() {
+    if (!playIntent || !hasCurrentMedia() || audio.paused || audio.ended || audio.seeking || audio.error) return;
+    isPendingPlay = false;
+    clearNetworkLoading();renderTransport();
+  }
+  function startNetworkLoading() {
+    if (!playIntent || settings.tracks[currentIndex]?.kind !== 'url' || !expectedSource || audio.src !== expectedSource) return;
+    if (!networkLoading) {
+      networkLoading = true;loadingSince = performance.now();lastMediaTime = audio.currentTime;
+      const seq = playSequence;
+      loadingTimer = setInterval(() => {
+        if (seq !== playSequence || !playIntent || audio.src !== expectedSource) {clearNetworkLoading();return;}
+        // Real timeline progress also recovers browsers that omit playing.
+        // canplay/metadata alone never count as successful playback.
+        if (hasCurrentMedia() && !audio.paused && !audio.seeking && audio.readyState >= 3 && audio.currentTime > lastMediaTime) confirmPlaying();
+        lastMediaTime = audio.currentTime;
+        if (networkLoading) renderLoading();
+      }, 1000);
+    }
+    renderLoading();renderTransport();
+  }
+  function pausePlayback() {
+    ++playRequest;playIntent = false;isPendingPlay = false;
+    clearNetworkLoading();audio.pause();renderTransport();
+  }
+  function playbackErrorMessage(error) {
+    if (error?.name === 'NotAllowedError') return '浏览器限制了自动播放，请手动点击播放';
+    if (error?.name === 'AbortError' || audio.error?.code === 1) return '播放请求已中断，请再次点击播放';
+    if (error?.name === 'NetworkError' || audio.error?.code === 2) return '音乐获取失败，请检查网络或链接是否失效';
+    return '无法读取这条音频，请检查音频格式、网络和链接有效性';
   }
   // SillyTavern characterId is only an array index, not a permanent ID.
   // Avatar filename is normally stable for the installed character card.
@@ -1184,6 +1245,10 @@ function init() {
   async function selectTrack(index, shouldPlay = false) {
     const nextTrack = visibleIndices().includes(index) ? settings.tracks[index] : null;
     const seq = ++playSequence;
+    const request = ++playRequest;
+    playIntent = Boolean(nextTrack && shouldPlay);
+    isPendingPlay = playIntent;expectedSource = '';
+    clearNetworkLoading();lastMediaTime = 0;
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -1204,20 +1269,37 @@ function init() {
       } else {
         audio.src = nextTrack.src;
       }
+      expectedSource = audio.src;
       audio.load();
-      if (shouldPlay) await play();
+      if (shouldPlay && playIntent && request === playRequest) await play();
     } catch (err) {
-      if (seq === playSequence) notice(err.message || '无法读取歌曲');
+      if (seq === playSequence && request === playRequest) {
+        pausePlayback();notice(err.message || '无法读取歌曲');
+      }
     }
   }
   async function play() {
     const visible = visibleIndices();
     if (!visible.length) { notice('当前分组没有歌曲，请先绑定或切换分组'); return; }
     if (!visible.includes(currentIndex)) {await selectTrack(visible[0], true); return;}
-    if (!audio.src) { await selectTrack(currentIndex, true); return; }
-    try { await audio.play(); }
-    catch { notice('无法播放：检查链接、音频格式或浏览器播放限制'); }
-    renderTransport();
+    if (!audio.src || audio.error) { await selectTrack(currentIndex, true); return; }
+    const seq = playSequence, request = ++playRequest;
+    playIntent = true;isPendingPlay = true;
+    startNetworkLoading();renderTransport();
+    try {
+      // Invoke immediately in the user gesture, with no readiness gate or timer.
+      const pending = audio.play();
+      if (pending?.then) await pending;
+      if (seq !== playSequence || request !== playRequest || !playIntent) return;
+      isPendingPlay = false;
+      if (pending?.then) confirmPlaying();
+      renderTransport();
+    } catch (error) {
+      // A canceled/replaced request must not pause or report errors for its successor.
+      if (seq !== playSequence || request !== playRequest) return;
+      const message = playbackErrorMessage(error);
+      pausePlayback();notice(message);
+    }
   }
   function nextIndex(direction) {
     const indices = visibleIndices();
@@ -1469,7 +1551,7 @@ function init() {
       const oldTracks=settings.tracks.slice();
       await commitBackupMedia(pieces,tracks,oldTracks,keys);
       // Only after all media writes commit do we update the playlist/settings.
-      audio.pause();
+      pausePlayback();
       settings.tracks=tracks;
       settings.roleOrders=normalizeRoleOrders(meta.settings.roleOrders);
       settings.characterLabels=Object.fromEntries(Object.entries(meta.settings.characterLabels||{})
@@ -1690,7 +1772,7 @@ function init() {
   }));
   $('.sw-close').addEventListener('click', () => showPanel(false));
   root.addEventListener('keydown', e => { if (e.key === 'Escape' && isPanelOpen()) showPanel(false); });
-  playButton.addEventListener('click', () => audio.paused ? void play() : audio.pause());
+  playButton.addEventListener('click', () => playIntent ? pausePlayback() : void play());
   $('.sw-prev').addEventListener('click', () => advance(-1));
   $('.sw-next').addEventListener('click', () => advance(1));
   $('.sw-mode').addEventListener('click', () => {
@@ -1699,7 +1781,10 @@ function init() {
     renderTransport(); persist(); notice(({all:'列表循环', one:'单曲循环', shuffle:'随机播放'})[mode]);
   });
   seek.addEventListener('input', () => {
-    if (Number.isFinite(audio.duration) && audio.duration > 0) audio.currentTime = (+seek.value / 1000) * audio.duration;
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      audio.currentTime = (+seek.value / 1000) * audio.duration;
+      lastMediaTime = audio.currentTime;
+    }
   });
   $('.sw-volume').addEventListener('input', e => {
     audio.volume = +e.target.value / 100;
@@ -1715,22 +1800,41 @@ function init() {
     const minutes = Number(e.target.value);
     sleepDeadline = minutes ? Date.now() + minutes * 60000 : 0;
     if (minutes) sleepHandle = setTimeout(() => {
-      audio.pause(); sleepDeadline = 0; $('.sw-sleep').value = '0';
+      pausePlayback(); sleepDeadline = 0; $('.sw-sleep').value = '0';
       notice('定时结束，音乐已暂停');
     }, minutes * 60000);
     notice(minutes ? `将在 ${minutes} 分钟后暂停` : '已关闭定时停止');
   });
   audio.addEventListener('play', renderTransport);
-  audio.addEventListener('pause', renderTransport);
-  audio.addEventListener('ended', () => advance(1, true));
+  for (const event of ['loadstart', 'waiting', 'stalled']) {
+    audio.addEventListener(event, () => {
+      if (hasCurrentMedia() && playIntent && (isPendingPlay || audio.readyState < 3 || audio.seeking)) startNetworkLoading();
+    });
+  }
+  audio.addEventListener('canplay', renderTransport);
+  audio.addEventListener('playing', () => {if (audio.readyState >= 3) confirmPlaying();});
+  audio.addEventListener('pause', () => {
+    // load()/rapid track changes may queue a pause event for an older source.
+    if (hasCurrentMedia() && audio.paused && playIntent && !isPendingPlay) pausePlayback();
+    else renderTransport();
+  });
+  audio.addEventListener('ended', () => {
+    if (!hasCurrentMedia() || !audio.ended) return;
+    ++playRequest;playIntent = false;isPendingPlay = false;clearNetworkLoading();
+    advance(1, true);
+  });
+  for (const event of ['seeking', 'seeked']) audio.addEventListener(event, () => {lastMediaTime = audio.currentTime;});
   audio.addEventListener('timeupdate', () => {
+    if (networkLoading && !audio.seeking && audio.readyState >= 3 && audio.currentTime > lastMediaTime) confirmPlaying();
+    lastMediaTime = audio.currentTime;
     $('.sw-elapsed').textContent = formatTime(audio.currentTime);
     if (Number.isFinite(audio.duration) && audio.duration > 0) seek.value = String(Math.round(audio.currentTime / audio.duration * 1000));
   });
   audio.addEventListener('durationchange', () => $('.sw-duration').textContent = formatTime(audio.duration));
   audio.addEventListener('error', () => {
-    if (audio.src) notice('音频加载失败：该链接可能已过期或格式不支持');
-    renderTransport();
+    if (!hasCurrentMedia() || !audio.error) return;
+    const message = playbackErrorMessage();
+    pausePlayback();notice(message);
   });
   // Per-character associations are local to the player's browser, and
   // switching chats updates the active view without rewriting any cards.

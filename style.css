@@ -194,6 +194,13 @@
 #soundwalk-player-root .sw-now-title { display:flex; flex-direction:column; min-width:0; gap:5px; }
 #soundwalk-player-root .sw-title { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:16px; font-weight:650; }
 #soundwalk-player-root .sw-artist { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--sw-muted); font-size:12px; }
+#soundwalk-player-root .sw-audio-meta {display:grid;min-width:0;}
+#soundwalk-player-root .sw-audio-meta > * {grid-area:1/1;min-width:0;}
+#soundwalk-player-root .sw-audio-meta.sw-is-loading .sw-artist {visibility:hidden;}
+#soundwalk-player-root .sw-load-status {display:flex;align-items:center;gap:5px;color:var(--sw-mint);font-size:10px;}
+#soundwalk-player-root .sw-load-text {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#soundwalk-player-root .sw-loading-spinner {width:11px;height:11px;flex:0 0 11px;border:2px solid #8fd7b94b;border-top-color:var(--sw-mint);border-radius:50%;animation:sw-loading-spin .8s linear infinite;}
+@keyframes sw-loading-spin {to{transform:rotate(360deg);}}
 #soundwalk-player-root .sw-progress-area { padding: 2px 19px 0; }
 #soundwalk-player-root input[type="range"] { accent-color:var(--sw-mint); cursor:pointer; }
 #soundwalk-player-root .sw-seek { display:block; width:100%; margin:5px 0 0; height:13px; }
