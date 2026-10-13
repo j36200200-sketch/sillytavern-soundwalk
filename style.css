@@ -199,6 +199,7 @@
 #soundwalk-player-root .sw-private-card .sw-pet-choice > span:last-child {max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 #soundwalk-player-root .sw-private-card .sw-custom-pet-actions {justify-content:center;gap:3px;}
 #soundwalk-player-root .sw-private-card .sw-custom-pet-actions button {padding:4px;font-size:10px;}
+#soundwalk-player-root .sw-gallery-position {width:100%;min-width:0;padding:4px 3px;border:1px solid #ffffff24;border-radius:6px;background:#143b35;color:var(--sw-cream);font-size:10px;}
 
 #soundwalk-player-root .sw-now { display:flex; align-items:center; gap:13px; padding:15px 17px 8px; }
 #soundwalk-player-root .sw-scene { width:69px; height:69px; border-radius:15px; position:relative; overflow:hidden; flex-shrink:0; background:linear-gradient(160deg,#466c73,#253f4e 67%,#162833); box-shadow:0 5px 14px #080f1644; }
