@@ -29,6 +29,7 @@ for (let i=44; i<wav.length; i+=2) wav.writeInt16LE(Math.round(Math.sin((i-44)/2
 async function server() {
   const s = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if(url.pathname==='/api/users/me'&&req.headers['x-test-user']) {res.setHeader('Content-Type','application/json');res.end(JSON.stringify({handle:req.headers['x-test-user']}));return;}
     if (url.pathname === '/blank') { res.end('<!doctype html><title>Fixture setup</title>'); return; }
     if (url.pathname === '/') {
       res.setHeader('Content-Type','text/html; charset=utf-8');
@@ -86,7 +87,7 @@ async function media(page) {
         const r=store.openCursor();r.onerror=()=>reject(r.error);
         r.onsuccess=()=>{const c=r.result;if(c){out.push([c.key,c.value]);c.continue();}else resolve(out);};
       });
-      output[name]=await Promise.all(pairs.map(async([key,blob])=>[key,blob.type,Array.from(new Uint8Array(await blob.arrayBuffer()))]));
+      output[name]=await Promise.all(pairs.filter(([,value])=>value instanceof Blob).map(async([key,blob])=>[key,blob.type,Array.from(new Uint8Array(await blob.arrayBuffer()))]));
     }
     db.close();return output;
   });
@@ -208,6 +209,7 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       await page.screenshot({path:path.join(artifacts,'pet-wardrobe.png')});
       for(const [id,file] of Object.entries(choices)){
         await page.locator(`.sw-pet-choice[data-pet="${id}"]`).click();
+        await until(async()=>(await settings(page)).closedPet===id);
         assert.equal((await settings(page)).closedPet,id);
         assert.match(await page.locator('.sw-orb-pet img').getAttribute('src'),/pet-shepherd-v123/);
         await page.locator('.sw-close').click();
@@ -217,6 +219,7 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
         await open(page);await page.locator('.sw-pet-settings-toggle').click();
       }
       await page.locator('.sw-pet-choice[data-pet="owl"]').click();
+      await until(async()=>(await settings(page)).closedPet==='owl');
       await page.locator('.sw-pet-settings-toggle').click();
     });
     await test('versioned entry points refresh stale script and stylesheet URLs',async()=>{

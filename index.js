@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.19';
+const VERSION = '1.3.20';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -17,6 +17,29 @@ const WALLPAPER_KEY = '__soundwalk_panel_wallpaper_v1__';
 const WALLPAPER_MAX_BYTES = 16 * 1024 * 1024;
 const PRIVATE_PET_KEYS = Object.freeze({closed:'__soundwalk_private_icon_closed_v1__',open:'__soundwalk_private_icon_open_v1__'});
 const PRIVATE_PET_MAX_BYTES = 512 * 1024;
+const PRIVATE_GALLERY_PREFIX = '__soundwalk_private_gallery_v1__:';
+const PRIVATE_GALLERY_OWNER = '__soundwalk_private_gallery_legacy_owner_v1__';
+const PRIVATE_GALLERY_MAX = 60;
+const PRIVATE_GALLERY_BYTES = 16 * 1024 * 1024;
+const isPrivatePet = pet => typeof pet==='string'&&/^private:icon-[\w-]{1,110}$/.test(pet);
+const galleryKey = (scope,id) => PRIVATE_GALLERY_PREFIX+encodeURIComponent(scope)+':'+id;
+function galleryRecord(raw) {
+  if(!raw||typeof raw.id!=='string'||!/^icon-[\w-]{1,110}$/.test(raw.id))throw new Error('私人图库记录损坏');
+  return {id:raw.id,name:cleanText(raw.name,32)||'私人图标'};
+}
+async function resolvePrivateScope() {
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
+  try{
+    const ctx=globalThis.SillyTavern?.getContext?.();
+    const response=await fetch('/api/users/me',{credentials:'same-origin',headers:ctx?.getRequestHeaders?.()||{},signal:controller.signal});
+    if(response.status===401||response.status===403)return {scope:null,label:'当前账户无法确认，私人图库暂不可用。'};
+    if(!response.ok)throw new Error('No account API');
+    const user=await response.json();
+    if(typeof user?.handle!=='string'||!user.handle.trim()||user.handle.length>200)throw new Error('No account handle');
+    return {scope:'account:'+user.handle,label:'已按当前酒馆账户分区。共用设备的本地数据仍不等于严格的安全隔离。'};
+  }catch{return {scope:'browser-local',label:'无法识别酒馆账号：仅按本浏览器保存，共用浏览器可能看到同一图库，不是严格账户隔离。'};}
+  finally{clearTimeout(timer);}
+}
 
 const icons = {
   music: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
@@ -115,7 +138,7 @@ const PET_LABELS = Object.freeze({
 });
 const DEFAULT_PETS = Object.freeze({closed:'cat',open:'golden'});
 function normalizePet(state, pet) {
-  if (pet === 'custom') return pet;
+  if (pet === 'custom'||isPrivatePet(pet)) return pet;
   return (state === 'closed' ? CLOSED_PETS : ['golden','shepherd']).includes(pet) ? pet : DEFAULT_PETS[state];
 }
 
@@ -134,7 +157,7 @@ function cleanText(value, max = 90) {
 }
 function validateTrack(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  if (Object.values(PRIVATE_PET_KEYS).includes(cleanText(raw.id,100))) return null;
+  if (Object.values(PRIVATE_PET_KEYS).includes(cleanText(raw.id,100))||String(raw.id).startsWith(PRIVATE_GALLERY_PREFIX)) return null;
   const title = cleanText(raw.title);
   const artist = cleanText(raw.artist || '未知歌手', 70);
   const kind = raw.kind === 'file' ? 'file' : 'url';
@@ -430,10 +453,10 @@ function init() {
   let preloadExpected = false;
   let openPet = settings.openPet;
   let closedPet = settings.closedPet;
-  const privatePetUrls = {closed:null,open:null};
-  const privatePetStored = {closed:false,open:false};
-  let privatePetBusy = true;
-  let privatePetUploadTarget = 'closed';
+  const privatePetUrls = new Map();
+  let privateScope=null, privateScopeReady=false, privatePetBusy=true, privatePickerPending=false;
+  let galleryMeta={items:[],selections:{},revision:0};
+  let legacyAvailable=false, privatePetUploadTarget='closed';
   let brandIcon = settings.brandIcon;
   let panelOpacity = settings.panelOpacity;
   let frostBlur = settings.frostBlur;
@@ -505,12 +528,11 @@ function init() {
           <button class="sw-pet-choice" type="button" data-state="open" data-pet="shepherd" aria-pressed="false"><span class="sw-pet-thumb">${petIcons.shepherd}</span><span>黑背德牧</span></button>
         </div>
         <section class="sw-custom-pets" aria-label="自定义上传图标">
-          <strong>自定义上传</strong>
+          <strong>我的私人图库 · 自定义上传</strong>
           <p class="sw-custom-hint">PNG、WebP、JPG，最大8MB。透明图片保留透明轮廓；完整缩放，不裁切。</p>
-          <div class="sw-custom-pet-grid">
-            ${['closed','open'].map(state=>`<div class="sw-custom-pet-slot"><button class="sw-pet-choice sw-custom-choice" type="button" data-state="${state}" data-pet="custom" aria-pressed="false" disabled><span class="sw-pet-thumb">＋</span><span>${state==='closed'?'收起自定义':'展开自定义'}</span></button><div class="sw-custom-pet-actions"><button type="button" data-custom-upload="${state}" disabled>上传${state==='closed'?'收起':'展开'}图</button><button type="button" data-custom-delete="${state}" disabled>删除</button></div></div>`).join('')}
-          </div>
-          <div class="sw-custom-pet-actions"><button type="button" data-custom-upload="both" disabled>一张用于两个状态</button><button class="sw-custom-reset" type="button" disabled>恢复默认猫狗</button></div>
+          <div class="sw-custom-pet-actions"><button type="button" data-custom-upload="closed" disabled>添加收起图标</button><button type="button" data-custom-upload="open" disabled>添加展开图标</button><button type="button" data-custom-upload="both" disabled>添加并两状态共用</button><button class="sw-custom-reset" type="button" disabled>恢复默认猫狗</button><button class="sw-gallery-migrate" type="button" hidden>导入旧版未分区图标</button></div>
+          <p class="sw-gallery-scope sw-custom-hint"></p>
+          <p class="sw-custom-hint">上传只会新增，图片会出现在上面的两组选项中；可改名或单独删除。最多60张，图片合计16MB。</p>
           <output class="sw-custom-status" aria-live="polite">正在读取本地图标…</output>
           <p class="sw-custom-hint">请使用自己拥有使用权限的图片，并尊重原作者及画师的版权。</p>
           <p class="sw-custom-hint">图片仅存于本浏览器，不上传服务器。歌单 JSON 不含图标；完整备份会包含私人图片，请勿公开分享。</p>
@@ -589,7 +611,7 @@ function init() {
       <input class="sw-backup-check-input" type="file" accept=".swbackup,application/octet-stream" hidden />
       <input class="sw-cover-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
       <input class="sw-wallpaper-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
-      <input class="sw-custom-pet-input" type="file" accept="image/png,image/webp,image/jpeg,.png,.webp,.jpg,.jpeg" hidden />
+      <input class="sw-custom-pet-input" type="file" accept="image/png,image/webp,image/jpeg,.png,.webp,.jpg,.jpeg" multiple hidden />
       </div>
       <p class="sw-notice" role="status" aria-live="polite"></p>
     </dialog>
@@ -837,7 +859,7 @@ function init() {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({tracks: settings.tracks, index: currentIndex, mode, volume: audio.volume, orbPosition,
-        followCharacter, autoRolePlayback, networkAcceleration, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet, closedPet, brandIcon, panelOpacity, frostBlur, wallpaperView}));
+        followCharacter, autoRolePlayback, networkAcceleration, manualFilter, characterLabels:settings.characterLabels, roleOrders:settings.roleOrders, openPet:legacyAvailable&&settings.openPet==='custom'&&galleryMeta.selections.open===undefined?'custom':isPrivatePet(openPet)?'golden':openPet, closedPet:legacyAvailable&&settings.closedPet==='custom'&&galleryMeta.selections.closed===undefined?'custom':isPrivatePet(closedPet)?'cat':closedPet, brandIcon, panelOpacity, frostBlur, wallpaperView}));
     } catch { notice('无法保存偏好：请检查浏览器存储权限或剩余空间'); }
   }
   // A non-modal dialog enters the top layer without inerting the page.
@@ -848,77 +870,100 @@ function init() {
   function isPanelOpen() {
     return (dialogSupported && panel.open) || panel.classList.contains('sw-fallback-open');
   }
-  function syncPetChoices() {
-    root.querySelectorAll('.sw-pet-choice').forEach(button => {
-      const selected = button.dataset.pet === (button.dataset.state === 'closed' ? closedPet : openPet);
-      button.setAttribute('aria-pressed', String(selected));
-      button.classList.toggle('sw-selected', selected);
-      button.disabled=privatePetBusy;
-    });
-    for(const state of ['closed','open']){
-      const button=$(`.sw-custom-choice[data-state="${state}"]`);
-      button.disabled=privatePetBusy||!privatePetUrls[state];
-      const thumb=button.querySelector('.sw-pet-thumb');
-      if(privatePetUrls[state]){
-        if(thumb.firstElementChild?.getAttribute('src')!==privatePetUrls[state])
-          thumb.replaceChildren(privatePetImage(state));
-      }else thumb.textContent='＋';
-      $(`[data-custom-delete="${state}"]`).disabled=privatePetBusy||!privatePetStored[state];
+  function renderPrivateChoices() {
+    root.querySelectorAll('[data-private-card]').forEach(el=>el.remove());
+    if(!privateScopeReady)return;
+    for(const state of ['closed','open'])for(const item of galleryMeta.items){
+      const card=document.createElement('div');card.className='sw-private-card';card.dataset.privateCard=item.id;
+      const choice=document.createElement('button');choice.type='button';choice.className='sw-pet-choice sw-private-choice';choice.dataset.state=state;choice.dataset.pet='private:'+item.id;
+      const thumb=document.createElement('span');thumb.className='sw-pet-thumb';
+      if(privatePetUrls.has(item.id))thumb.append(privatePetImage(item.id));else thumb.textContent='?';
+      const name=document.createElement('span');name.textContent=item.name;name.title=item.name;
+      choice.append(thumb,name);card.append(choice);
+      const actions=document.createElement('div');actions.className='sw-custom-pet-actions';
+      for(const [action,label] of [['rename','改名'],['delete','删除']]){const b=document.createElement('button');b.type='button';b.dataset.galleryAction=action;b.dataset.iconId=item.id;b.textContent=label;actions.append(b);}
+      card.append(actions);$(`.sw-pet-${state==='closed'?'closed':'open'}-choices`).append(card);
     }
-    root.querySelectorAll('[data-custom-upload]').forEach(button=>button.disabled=privatePetBusy);
+  }
+  function syncPetChoices() {
+    root.querySelectorAll('.sw-pet-choice').forEach(button=>{
+      const pet=button.dataset.pet,selected=pet===(button.dataset.state==='closed'?closedPet:openPet);
+      button.setAttribute('aria-pressed',String(selected));button.classList.toggle('sw-selected',selected);
+      button.disabled=privatePetBusy||(isPrivatePet(pet)&&(!privateScopeReady||!privatePetUrls.has(pet.slice(8))));
+    });
+    root.querySelectorAll('[data-custom-upload],[data-gallery-action]').forEach(b=>b.disabled=privatePetBusy||!privateScopeReady);
     $('.sw-custom-reset').disabled=privatePetBusy;
+    $('.sw-gallery-migrate').hidden=!legacyAvailable||!privateScopeReady;
+    $('.sw-gallery-migrate').disabled=privatePetBusy;
   }
-  function privatePetImage(state) {
-    const img=document.createElement('img'),url=privatePetUrls[state];
-    img.className='sw-pet-art sw-pet-raster';img.src=url;img.alt='本地自定义图标';img.draggable=false;img.decoding='async';
+  function clearPrivateUrls() {for(const url of privatePetUrls.values())URL.revokeObjectURL(url);privatePetUrls.clear();}
+  function privatePetImage(id) {
+    const img=document.createElement('img'),url=privatePetUrls.get(id);
+    img.className='sw-pet-art sw-pet-raster';img.src=url;img.alt=galleryMeta.items.find(x=>x.id===id)?.name||'私人图标';img.draggable=false;img.decoding='async';
     img.addEventListener('error',()=>{
-      if(privatePetUrls[state]!==url)return;
-      setPrivatePetUrl(state,null);
-      if(state==='closed'&&closedPet==='custom')closedPet='cat';
-      if(state==='open'&&openPet==='custom')openPet='golden';
-      syncPetChoices();syncPanelState();persist();
-      $('.sw-custom-status').textContent='图标读取失败，已恢复默认；可重新上传或删除损坏图片。';
-    },{once:true});
-    return img;
+      if(privatePetUrls.get(id)!==url)return;
+      URL.revokeObjectURL(url);privatePetUrls.delete(id);
+      if(closedPet==='private:'+id)closedPet='cat';if(openPet==='private:'+id)openPet='golden';
+      renderPrivateChoices();syncPetChoices();syncPanelState();persist();
+      $('.sw-custom-status').textContent='图标读取失败，已恢复默认；原记录保留，可删除损坏图片。';
+    },{once:true});return img;
   }
-  function setPrivatePetUrl(state,url) {
-    const previous=privatePetUrls[state];privatePetUrls[state]=url;
-    if(previous)URL.revokeObjectURL(previous);
+  async function galleryWrite(next,adds=[],deletes=[],claimLegacy=false) {
+    if(!privateScopeReady)throw new Error('请先确认当前账户');
+    const scope=privateScope,identity=await resolvePrivateScope();
+    if(identity.scope!==scope){privateScopeReady=false;clearPrivateUrls();renderPrivateChoices();syncPanelState();throw new Error('账户状态变化，请重新打开图库后再操作');}
+    if(next.items.length>PRIVATE_GALLERY_MAX)throw new Error('私人图库最多60张，请先删除不需要的图片');
+    const added=new Map(adds.map(x=>[x.id,x.blob]));let bytes=0;
+    for(const item of next.items){bytes+=(added.get(item.id)||await coverAction('get',galleryKey(scope,item.id)))?.size||0;}
+    if(bytes>PRIVATE_GALLERY_BYTES)throw new Error('私人图库图片合计不能超过16MB，原图库已保留');
+    const db=await openAudioDb();
+    try{await new Promise((resolve,reject)=>{
+      const tx=db.transaction(COVER_STORE,'readwrite'),store=tx.objectStore(COVER_STORE),r=store.get(galleryKey(scope,'meta'));
+      tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error||new Error('图库存储失败，原有记录已保留'));
+      r.onsuccess=()=>{try{
+        if((r.result?.revision||0)!==galleryMeta.revision)throw new Error('图库已在其他页面修改，请刷新后再试');
+        if(claimLegacy){const owner=store.get(PRIVATE_GALLERY_OWNER);owner.onsuccess=()=>{if(owner.result&&owner.result!==scope){tx.abort();return;}store.put(scope,PRIVATE_GALLERY_OWNER);};}
+        for(const x of adds)store.put(x.blob,galleryKey(scope,x.id));
+        for(const id of deletes)store.delete(galleryKey(scope,id));
+        store.put({...next,revision:galleryMeta.revision+1},galleryKey(scope,'meta'));
+      }catch(e){tx.abort();reject(e);}};
+    });}finally{db.close();}
+    galleryMeta={...next,revision:galleryMeta.revision+1};
   }
   async function loadPrivatePets() {
-    privatePetBusy=true;syncPetChoices();
-    let changed=false,failed=false;
+    if(privatePickerPending)return;
+    privatePetBusy=true;syncPetChoices();clearPrivateUrls();privateScopeReady=false;renderPrivateChoices();syncPanelState();
+    let failed=false;
     try{
-      const stored=await privatePetAction('get');
-      for(const state of ['closed','open']){
-        privatePetStored[state]=stored[state]!==undefined;
-        let url=null;
-        if(privatePetStored[state]){
-          try{url=await privatePetUrl(stored[state]);}catch{failed=true;}
-        }
-        setPrivatePetUrl(state,url);
-      }
-    }catch{
-      failed=true;
-      for(const state of ['closed','open']){setPrivatePetUrl(state,null);privatePetStored[state]=false;}
-    }finally{
-      if(closedPet==='custom'&&!privatePetUrls.closed){closedPet='cat';changed=true;}
-      if(openPet==='custom'&&!privatePetUrls.open){openPet='golden';changed=true;}
-      privatePetBusy=false;syncPetChoices();syncPanelState();
-      $('.sw-custom-status').textContent=failed||changed
-        ? '部分图标缺失或无法读取，已使用默认图标；可重新上传。'
-        : (privatePetStored.closed||privatePetStored.open?'本地自定义图标已就绪。':'可分别上传，或用一张图片设置两个状态。');
-      if(changed)persist();
-    }
+      const identity=await resolvePrivateScope();
+      if(privateScope?.startsWith('account:')&&identity.scope==='browser-local')throw new Error('暂时无法核对账户，私人图库已隐藏，请稍后重试');
+      privateScope=identity.scope;$('.sw-gallery-scope').textContent=identity.label;
+      if(!privateScope)throw new Error(identity.label);
+      const data=await coverAction('get',galleryKey(privateScope,'meta'));
+      const items=data?.items===undefined?[]:data.items;
+      if(!Array.isArray(items)||items.length>PRIVATE_GALLERY_MAX)throw new Error('图库目录无法读取，原文件已保留');
+      galleryMeta={items:items.map(galleryRecord),selections:data?.selections||{},revision:data?.revision||0};
+      if(new Set(galleryMeta.items.map(x=>x.id)).size!==galleryMeta.items.length)throw new Error('图库目录存在重复记录');
+      const owner=await coverAction('get',PRIVATE_GALLERY_OWNER);
+      legacyAvailable=!owner&&(await privatePetAction('get')).closed!==undefined;
+      if(!owner&&!legacyAvailable)legacyAvailable=(await privatePetAction('get')).open!==undefined;
+      for(const item of galleryMeta.items){try{privatePetUrls.set(item.id,await privatePetUrl(await coverAction('get',galleryKey(privateScope,item.id))));}catch{failed=true;}}
+      privateScopeReady=true;
+      closedPet=normalizePet('closed',galleryMeta.selections.closed||(!isPrivatePet(closedPet)&&closedPet!=='custom'?closedPet:'cat'));
+      openPet=normalizePet('open',galleryMeta.selections.open||(!isPrivatePet(openPet)&&openPet!=='custom'?openPet:'golden'));
+      if(isPrivatePet(closedPet)&&!privatePetUrls.has(closedPet.slice(8)))closedPet='cat';
+      if(isPrivatePet(openPet)&&!privatePetUrls.has(openPet.slice(8)))openPet='golden';
+    }catch(e){failed=true;galleryMeta={items:[],selections:{},revision:0};$('.sw-gallery-scope').textContent=e.message||'图库暂时不可用';closedPet=isPrivatePet(closedPet)||closedPet==='custom'?'cat':closedPet;openPet=isPrivatePet(openPet)||openPet==='custom'?'golden':openPet;}
+    finally{privatePetBusy=false;renderPrivateChoices();syncPetChoices();syncPanelState();persist();$('.sw-custom-status').textContent=failed?'部分图标无法读取，原文件保留；请重试或删除损坏记录。':`我的私人图库：${galleryMeta.items.length} / 60 张。上传会新增，不会覆盖。`;}
   }
   function syncPanelState() {
     const open = isPanelOpen();
     const state=open?'open':'closed',pet=open?openPet:closedPet;
-    if(pet==='custom'&&privatePetUrls[state])$('.sw-orb-pet').replaceChildren(privatePetImage(state));
+    if(privateScopeReady&&isPrivatePet(pet)&&privatePetUrls.has(pet.slice(8)))$('.sw-orb-pet').replaceChildren(privatePetImage(pet.slice(8)));
     else $('.sw-orb-pet').innerHTML=petIcons[pet]||petIcons[DEFAULT_PETS[state]];
     orb.classList.toggle('sw-open', open);
     orb.setAttribute('aria-expanded', String(open));
-    orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : `打开听风音乐播放器，当前头像：${closedPet==='custom'?'自定义图标':PET_LABELS[closedPet]}`);
+    orb.setAttribute('aria-label', open ? '关闭听风音乐播放器' : `打开听风音乐播放器，当前头像：${isPrivatePet(closedPet)?(galleryMeta.items.find(x=>'private:'+x.id===closedPet)?.name||'私人图标'):PET_LABELS[closedPet]}`);
   }
   // Follow the movable pet head. Keep the panel inside the screen:
   // below the head when possible, above it near the bottom, and aligned
@@ -2050,16 +2095,16 @@ function init() {
       const wallpaper=await coverAction('get',WALLPAPER_KEY);
       if(wallpaper!==undefined && wallpaper!==null)
         await addChecked('wallpaper',WALLPAPER_KEY,wallpaper,'播放器壁纸',WALLPAPER_MAX_BYTES);
-      const icons=await privatePetAction('get');
-      for(const state of ['closed','open']){
-        if(icons[state]!==undefined){
-          const checkedUrl=await privatePetUrl(icons[state]);URL.revokeObjectURL(checkedUrl);
-          await addChecked('privatePet',PRIVATE_PET_KEYS[state],icons[state],'私人图标',PRIVATE_PET_MAX_BYTES);
-        }else if((state==='closed'?closedPet:openPet)==='custom')throw new Error('私人图标文件缺失，请重新上传或恢复默认后再备份');
+      if(!privateScopeReady)throw new Error('私人图库未就绪，请稍后再备份');
+      const identity=await resolvePrivateScope();if(identity.scope!==privateScope)throw new Error('账户状态变化，请重新打开图库再备份');
+      for(const item of galleryMeta.items){
+        const blob=await coverAction('get',galleryKey(privateScope,item.id));
+        const checkedUrl=await privatePetUrl(blob);URL.revokeObjectURL(checkedUrl);
+        await addChecked('privatePet',item.id,blob,item.name,PRIVATE_PET_MAX_BYTES);
       }
-      const unsigned={format:'soundwalk-complete',version:entries.some(e=>e.kind==='privatePet')?4:3,createdAt:new Date().toISOString(),
+      const unsigned={format:'soundwalk-complete',version:galleryMeta.items.length?5:3,createdAt:new Date().toISOString(),
         settings:{tracks:settings.tracks,characterLabels:settings.characterLabels,roleOrders:settings.roleOrders,
-          mode,volume:audio.volume,followCharacter,autoRolePlayback,networkAcceleration,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur,wallpaperView},entries};
+          mode,volume:audio.volume,followCharacter,autoRolePlayback,networkAcceleration,manualFilter,openPet,closedPet,brandIcon,orbPosition,panelOpacity,frostBlur,wallpaperView,...(galleryMeta.items.length?{privateGallery:galleryMeta.items}:{})},entries};
       const metadataCrc32=checksumHex(new TextEncoder().encode(JSON.stringify(unsigned)));
       const meta={...unsigned,metadataCrc32};
       const payload=new TextEncoder().encode(JSON.stringify(meta));
@@ -2087,7 +2132,7 @@ function init() {
     let meta;
     try{meta=JSON.parse(new TextDecoder().decode(await file.slice(18,18+length).arrayBuffer()));}
     catch{throw new Error('备份信息损坏，无法解析');}
-    if(meta?.format!=='soundwalk-complete'||![1,2,3,4].includes(meta.version)||
+    if(meta?.format!=='soundwalk-complete'||![1,2,3,4,5].includes(meta.version)||
         !Array.isArray(meta.settings?.tracks)||!Array.isArray(meta.entries))
       throw new Error('备份格式不受支持');
     if(meta.version>=3){
@@ -2097,12 +2142,19 @@ function init() {
         throw new Error('备份目录校验失败：歌单或文件信息可能已损坏');
     }
     const rawTracks=meta.settings.tracks;
-    if(rawTracks.length>MAX_TRACKS||meta.entries.length>MAX_TRACKS*2+3)
+    if(rawTracks.length>MAX_TRACKS||meta.entries.length>MAX_TRACKS*2+1+PRIVATE_GALLERY_MAX)
       throw new Error('备份文件的歌曲数量超出限制');
     const tracks=rawTracks.map(validateTrack);
     if(tracks.some(t=>!t)||new Set(tracks.map(t=>t.id)).size!==tracks.length)
       throw new Error('备份歌曲资料损坏或存在重复标识');
     const byId=new Map(tracks.map(t=>[t.id,t]));
+    let gallery=null;
+    if(meta.version>=5){
+      if(!Array.isArray(meta.settings.privateGallery)||meta.settings.privateGallery.length>PRIVATE_GALLERY_MAX)throw new Error('备份私人图库目录损坏');
+      gallery={items:meta.settings.privateGallery.map(galleryRecord),selections:{closed:normalizePet('closed',meta.settings.closedPet),open:normalizePet('open',meta.settings.openPet)}};
+      if(new Set(gallery.items.map(x=>x.id)).size!==gallery.items.length)throw new Error('备份私人图库存在重复记录');
+    }
+    const galleryIds=new Set(gallery?.items.map(x=>x.id)||[]);
     const pieces=[],keys=new Set();
     let offset=18+length;
     for(const entry of meta.entries){
@@ -2111,7 +2163,7 @@ function init() {
       const target=byId.get(id);
       const valid=kind==='wallpaper'
         ? (meta.version>=2&&id===WALLPAPER_KEY)
-        : kind==='privatePet' ? (meta.version>=4&&Object.values(PRIVATE_PET_KEYS).includes(id)&&entry.type==='image/png')
+        : kind==='privatePet' ? ((meta.version===4?Object.values(PRIVATE_PET_KEYS).includes(id):meta.version>=5&&galleryIds.has(id))&&entry.type==='image/png')
         : (kind==='audio' ? target?.kind==='file' : kind==='cover'&&Boolean(target));
       const max=kind==='audio'?MAX_FILE_SIZE:kind==='wallpaper'?WALLPAPER_MAX_BYTES:kind==='privatePet'?PRIVATE_PET_MAX_BYTES:COVER_MAX_BYTES;
       if(!valid||keys.has(mark)||!Number.isSafeInteger(size)||size<1||size>max||offset+size>file.size)
@@ -2124,8 +2176,12 @@ function init() {
     }
     if(offset!==file.size||tracks.some(t=>t.kind==='file'&&!keys.has('audio:'+t.id)))
       throw new Error('备份文件长度不一致，或部分本地音乐缺失');
-    if(meta.version>=4&&['closed','open'].some(state=>meta.settings[state==='closed'?'closedPet':'openPet']==='custom'&&!keys.has('privatePet:'+PRIVATE_PET_KEYS[state])))
+    if(meta.version===4&&['closed','open'].some(state=>meta.settings[state==='closed'?'closedPet':'openPet']==='custom'&&!keys.has('privatePet:'+PRIVATE_PET_KEYS[state])))
       throw new Error('备份缺少正在使用的私人图标，已停止恢复');
+    if(meta.version>=5){
+      if(gallery.items.some(x=>!keys.has('privatePet:'+x.id))||pieces.filter(x=>x.kind==='privatePet').reduce((sum,x)=>sum+x.blob.size,0)>PRIVATE_GALLERY_BYTES)throw new Error('备份私人图库图片缺失或容量超限');
+      for(const state of ['closed','open'])if(gallery.selections[state]==='custom'||(isPrivatePet(gallery.selections[state])&&!galleryIds.has(gallery.selections[state].slice(8))))throw new Error('备份选择的私人图标缺失');
+    }
     if(meta.version>=3){
       for(let i=0;i<pieces.length;i++){
         const piece=pieces[i];
@@ -2139,32 +2195,37 @@ function init() {
         }
       }
     }
-    return {meta,tracks,pieces,keys,verified:meta.version>=3};
+    if(meta.version===4){
+      gallery={items:[],selections:{closed:normalizePet('closed',meta.settings.closedPet),open:normalizePet('open',meta.settings.openPet)}};
+      for(const state of ['closed','open']){
+        const piece=pieces.find(x=>x.kind==='privatePet'&&x.id===PRIVATE_PET_KEYS[state]);
+        if(piece){piece.storageId='icon-legacy-'+state;gallery.items.push({id:piece.storageId,name:state==='closed'?'旧版收起图标':'旧版展开图标'});if(gallery.selections[state]==='custom')gallery.selections[state]='private:'+piece.storageId;}
+      }
+    }
+    return {meta,tracks,pieces,keys,gallery,verified:meta.version>=3};
   }
   // The two media stores are updated in ONE IndexedDB transaction. If quota
   // or write errors occur, the browser rolls back the whole media restore.
-  async function commitBackupMedia(pieces,tracks,oldTracks,keys,includePrivatePets=false){
+  async function commitBackupMedia(pieces,tracks,oldTracks,keys,nextGallery){
+    const scope=privateScope;
+    if(!privateScopeReady||!scope)throw new Error('私人图库未就绪，未开始恢复');
+    const identity=await resolvePrivateScope();if(identity.scope!==scope)throw new Error('账户状态变化，未开始恢复');
     const db=await openAudioDb();
-    try{
-      await new Promise((resolve,reject)=>{
-        const tx=db.transaction([DB_STORE,COVER_STORE],'readwrite');
-        const songs=tx.objectStore(DB_STORE),art=tx.objectStore(COVER_STORE);
-        tx.oncomplete=()=>resolve();
-        tx.onabort=()=>reject(tx.error||new Error('存储空间不足，恢复已回滚，请检查容量'));
-        try{
-          for(const piece of pieces)
-            (piece.kind==='audio'?songs:art).put(piece.blob,piece.id);
-          const next=new Map(tracks.map(t=>[t.id,t]));
-          for(const old of oldTracks){
-            if(old.kind==='file'&&next.get(old.id)?.kind!=='file') songs.delete(old.id);
-            if(!next.has(old.id)||!keys.has('cover:'+old.id)) art.delete(old.id);
-          }
-          if(!keys.has('wallpaper:'+WALLPAPER_KEY)) art.delete(WALLPAPER_KEY);
-          if(includePrivatePets)for(const id of Object.values(PRIVATE_PET_KEYS))
-            if(!keys.has('privatePet:'+id))art.delete(id);
-        }catch(error){try{tx.abort();}catch{} reject(error);}
-      });
-    }finally{db.close();}
+    try{await new Promise((resolve,reject)=>{
+      const tx=db.transaction([DB_STORE,COVER_STORE],'readwrite'),songs=tx.objectStore(DB_STORE),art=tx.objectStore(COVER_STORE);
+      tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error||new Error('存储空间不足，恢复已回滚'));
+      const check=art.get(galleryKey(scope,'meta'));
+      check.onsuccess=()=>{try{
+        if((check.result?.revision||0)!==galleryMeta.revision)throw new Error('图库已在其他页面修改，恢复已取消');
+        for(const piece of pieces)(piece.kind==='audio'?songs:art).put(piece.blob,piece.kind==='privatePet'?galleryKey(scope,piece.storageId||piece.id):piece.id);
+        const next=new Map(tracks.map(t=>[t.id,t]));
+        for(const old of oldTracks){if(old.kind==='file'&&next.get(old.id)?.kind!=='file')songs.delete(old.id);if(!next.has(old.id)||!keys.has('cover:'+old.id))art.delete(old.id);}
+        if(!keys.has('wallpaper:'+WALLPAPER_KEY))art.delete(WALLPAPER_KEY);
+        const keep=new Set(nextGallery.items.map(x=>x.id));
+        for(const item of galleryMeta.items)if(!keep.has(item.id))art.delete(galleryKey(scope,item.id));
+        art.put({...nextGallery,revision:galleryMeta.revision+1},galleryKey(scope,'meta'));
+      }catch(e){tx.abort();reject(e);}};
+    });}finally{db.close();}
   }
   async function importFullBackup(file) {
     if(!file)return;
@@ -2172,13 +2233,14 @@ function init() {
     $('.sw-backup-import').disabled=true;
     try{
       notice('恢复前先校验备份，请稍候…');
-      const {meta,tracks,pieces,keys,verified}=await verifyFullBackup(file);
+      const {meta,tracks,pieces,keys,gallery,verified}=await verifyFullBackup(file);
       const warning=verified ? '媒体文件和备份目录的校验码全部通过。' :
         '这是旧版备份：结构检查通过，但没有媒体校验码，无法证明文件内容完好。';
       if(!window.confirm(warning+'\n确认用这 '+tracks.length+' 首歌曲替换听风现有歌单与设置？\n建议先备份当前歌单。'))return;
       notice('正在安全恢复媒体文件，请不要关闭酒馆…');
       const oldTracks=settings.tracks.slice();
-      await commitBackupMedia(pieces,tracks,oldTracks,keys,meta.version>=4);
+      const nextGallery=gallery||{items:galleryMeta.items,selections:{closed:normalizePet('closed',meta.settings.closedPet==='custom'?'cat':meta.settings.closedPet),open:normalizePet('open',meta.settings.openPet==='custom'?'golden':meta.settings.openPet)}};
+      await commitBackupMedia(pieces,tracks,oldTracks,keys,nextGallery);
       // Only after all media writes commit do we update the playlist/settings.
       pausePlayback();
       settings.tracks=tracks;
@@ -2380,75 +2442,86 @@ function init() {
   });
   const petSettings = $('.sw-pet-settings');
   const petSettingsToggle = $('.sw-pet-settings-toggle');
-  petSettingsToggle.addEventListener('click', () => {
+  petSettingsToggle.addEventListener('click', async () => {
+    if(petSettings.hidden&&!privatePetBusy)await loadPrivatePets();
     petSettings.hidden = !petSettings.hidden;
     petSettingsToggle.setAttribute('aria-expanded', String(!petSettings.hidden));
     if (!petSettings.hidden) syncPetChoices();
     requestAnimationFrame(positionPanelNearOrb);
   });
-  root.querySelectorAll('.sw-pet-choice').forEach(button => button.addEventListener('click', () => {
-    const pet = button.dataset.pet;
-    if(privatePetBusy)return;
-    if (button.dataset.state === 'closed') {
-      if (!(pet==='custom'&&privatePetUrls.closed)&&!CLOSED_PETS.includes(pet)) return;
-      closedPet = pet;
-    } else {
-      if (!(pet==='custom'&&privatePetUrls.open)&&!['golden', 'shepherd'].includes(pet)) return;
-      openPet = pet;
-    }
-    syncPetChoices();
-    syncPanelState();
-    persist();
-    notice(button.dataset.state === 'closed'
-      ? `收起头像已换成${closedPet==='custom'?'自定义图标':PET_LABELS[closedPet]} · 下次打开仍会保留`
-      : `展开头像已换成${openPet==='custom'?'自定义图标':PET_LABELS[openPet]}`);
-  }));
   function canEditPrivatePets() {
-    if(privatePetBusy||$('.sw-backup-export').disabled||$('.sw-backup-import').disabled){
-      $('.sw-custom-status').textContent='正在保存或恢复，请稍后再操作图标。';return false;
-    }
-    return true;
+    if(privatePetBusy||!privateScopeReady||$('.sw-backup-export').disabled||$('.sw-backup-import').disabled){$('.sw-custom-status').textContent='请等待图库就绪，或完成当前保存／恢复操作。';return false;}return true;
   }
-  const privatePetInput=$('.sw-custom-pet-input');
-  root.querySelectorAll('[data-custom-upload]').forEach(button=>button.addEventListener('click',()=>{
-    if(!canEditPrivatePets())return;
-    privatePetUploadTarget=button.dataset.customUpload;privatePetInput.value='';privatePetInput.click();
-  }));
-  privatePetInput.addEventListener('change',async()=>{
-    const file=privatePetInput.files?.[0],target=privatePetUploadTarget;
-    privatePetInput.value='';if(!file||!canEditPrivatePets())return;
-    privatePetBusy=true;syncPetChoices();$('.sw-custom-status').textContent='正在处理并保存本地图标…';
-    const states=target==='both'?['closed','open']:[target],urls={};
-    try{
-      const blob=await makePrivatePetBlob(file);
-      for(const state of states)urls[state]=await privatePetUrl(blob);
-      await privatePetAction('put',states,blob);
-      for(const state of states){setPrivatePetUrl(state,urls[state]);delete urls[state];privatePetStored[state]=true;}
-      if(states.includes('closed'))closedPet='custom';
-      if(states.includes('open'))openPet='custom';
-      persist();$('.sw-custom-status').textContent='已保存并使用自定义图标，仅保存在本浏览器。';
-    }catch(error){$('.sw-custom-status').textContent=error.message||'图标保存失败，原有图标已保留';}
-    finally{
-      for(const url of Object.values(urls))URL.revokeObjectURL(url);
-      privatePetBusy=false;syncPetChoices();syncPanelState();requestAnimationFrame(positionPanelNearOrb);
-    }
-  });
-  root.querySelectorAll('[data-custom-delete]').forEach(button=>button.addEventListener('click',async()=>{
-    if(!canEditPrivatePets())return;
-    const state=button.dataset.customDelete;
+  root.addEventListener('click',async event=>{
+    const button=event.target.closest('.sw-pet-choice');if(!button||privatePetBusy)return;
+    const state=button.dataset.state,pet=button.dataset.pet;
+    if(isPrivatePet(pet)?!privatePetUrls.has(pet.slice(8)):!(state==='closed'?CLOSED_PETS:['golden','shepherd']).includes(pet))return;
     privatePetBusy=true;syncPetChoices();
     try{
-      await privatePetAction('delete',[state]);setPrivatePetUrl(state,null);privatePetStored[state]=false;
-      if(state==='closed'&&closedPet==='custom')closedPet='cat';
-      if(state==='open'&&openPet==='custom')openPet='golden';
-      persist();$('.sw-custom-status').textContent='已删除该状态的私人图标，并清理对应本地图片。';
-    }catch(error){$('.sw-custom-status').textContent=error.message||'删除失败，现有图标已保留';}
+      if(privateScopeReady)await galleryWrite({...galleryMeta,selections:{closed:closedPet,open:openPet,[state]:pet}});
+      if(state==='closed')closedPet=pet;else openPet=pet;persist();
+    }catch(e){$('.sw-custom-status').textContent=e.message;}
     finally{privatePetBusy=false;syncPetChoices();syncPanelState();}
+  });
+  const privatePetInput=$('.sw-custom-pet-input');
+  root.querySelectorAll('[data-custom-upload]').forEach(button=>button.addEventListener('click',()=>{
+    if(!canEditPrivatePets())return;privatePetUploadTarget=button.dataset.customUpload;privatePickerPending=true;privatePetInput.value='';privatePetInput.click();
   }));
-  $('.sw-custom-reset').addEventListener('click',()=>{
-    if(!canEditPrivatePets())return;
-    closedPet='cat';openPet='golden';syncPetChoices();syncPanelState();persist();
-    $('.sw-custom-status').textContent='已恢复默认猫狗；上传的图片仍保留，可重新选择或单独删除。';
+  privatePetInput.addEventListener('cancel',()=>{privatePickerPending=false;});
+  privatePetInput.addEventListener('change',async()=>{
+    const files=Array.from(privatePetInput.files||[]),target=privatePetUploadTarget;privatePickerPending=false;privatePetInput.value='';
+    if(!files.length||!canEditPrivatePets())return;
+    privatePetBusy=true;syncPetChoices();$('.sw-custom-status').textContent='正在新增私人图标…';
+    try{
+      if(galleryMeta.items.length+files.length>PRIVATE_GALLERY_MAX)throw new Error('私人图库最多60张，本次未新增，请减少图片数量');
+      const adds=[];let total=0;
+      for(const item of galleryMeta.items){const b=await coverAction('get',galleryKey(privateScope,item.id));total+=b?.size||0;}
+      for(const file of files){const blob=await makePrivatePetBlob(file);total+=blob.size;if(total>PRIVATE_GALLERY_BYTES)throw new Error('私人图库图片合计不能超过16MB，请删除不需要的图片');adds.push({id:'icon-'+uid(),name:cleanText(file.name?.replace(/\.[^.]+$/,''),32)||'私人图标',blob});}
+      const last='private:'+adds[adds.length-1].id,selections={closed:closedPet,open:openPet};
+      if(target==='both'){selections.closed=last;selections.open=last;}else selections[target]=last;
+      await galleryWrite({...galleryMeta,items:[...galleryMeta.items,...adds.map(({id,name})=>({id,name}))],selections},adds);
+      await loadPrivatePets();$('.sw-custom-status').textContent=`已新增 ${adds.length} 张，原有图片全部保留。`;
+    }catch(e){$('.sw-custom-status').textContent=e.message||'新增失败，原图库已保留';}
+    finally{privatePetBusy=false;syncPetChoices();syncPanelState();requestAnimationFrame(positionPanelNearOrb);}
+  });
+  root.addEventListener('click',async event=>{
+    const button=event.target.closest('[data-gallery-action]');if(!button||!canEditPrivatePets())return;
+    const id=button.dataset.iconId,item=galleryMeta.items.find(x=>x.id===id);if(!item)return;
+    let next={...galleryMeta,items:galleryMeta.items.slice(),selections:{closed:closedPet,open:openPet}},deletes=[];
+    if(button.dataset.galleryAction==='rename'){
+      const name=window.prompt('给这张私人图标起名（最多32字）',item.name);if(name===null)return;
+      const cleaned=cleanText(name,32);if(!cleaned){$('.sw-custom-status').textContent='名称不能为空。';return;}
+      next.items=next.items.map(x=>x.id===id?{...x,name:cleaned}:x);
+    }else{
+      if(!window.confirm('删除「'+item.name+'」？其他图片会保留，使用它的状态将恢复默认。'))return;
+      next.items=next.items.filter(x=>x.id!==id);deletes=[id];
+      for(const state of ['closed','open'])if(next.selections[state]==='private:'+id)next.selections[state]=DEFAULT_PETS[state];
+    }
+    privatePetBusy=true;syncPetChoices();
+    try{await galleryWrite(next,[],deletes);await loadPrivatePets();}
+    catch(e){$('.sw-custom-status').textContent=e.message;}
+    finally{privatePetBusy=false;syncPetChoices();syncPanelState();}
+  });
+  $('.sw-custom-reset').addEventListener('click',async()=>{
+    if(privatePetBusy)return;privatePetBusy=true;syncPetChoices();
+    try{if(privateScopeReady)await galleryWrite({...galleryMeta,selections:{closed:'cat',open:'golden'}});closedPet='cat';openPet='golden';persist();$('.sw-custom-status').textContent='已恢复默认猫狗，图库中的图片全部保留。';}
+    catch(e){$('.sw-custom-status').textContent=e.message;}
+    finally{privatePetBusy=false;syncPetChoices();syncPanelState();}
+  });
+  $('.sw-gallery-migrate').addEventListener('click',async()=>{
+    if(!canEditPrivatePets()||!legacyAvailable)return;
+    if(!window.confirm('旧版图片没有账号归属。确认它们属于你，并导入当前图库？原文件会保留；其他账号不会自动获得。'))return;
+    privatePetBusy=true;syncPetChoices();
+    try{const old=await privatePetAction('get'),adds=[],selections={closed:closedPet,open:openPet};
+      for(const state of ['closed','open'])if(old[state]!==undefined){const url=await privatePetUrl(old[state]);URL.revokeObjectURL(url);const id='icon-'+uid();adds.push({id,name:state==='closed'?'旧版收起图标':'旧版展开图标',blob:old[state]});if(galleryMeta.selections[state]===undefined&&settings[state==='closed'?'closedPet':'openPet']==='custom')selections[state]='private:'+id;}
+      await galleryWrite({...galleryMeta,items:[...galleryMeta.items,...adds.map(({id,name})=>({id,name}))],selections},adds,[],true);legacyAvailable=false;await loadPrivatePets();
+    }catch(e){$('.sw-custom-status').textContent=e.message;}
+    finally{privatePetBusy=false;syncPetChoices();syncPanelState();}
+  });
+  document.addEventListener('visibilitychange',()=>{
+    if(privatePetBusy||privatePickerPending)return;
+    if(document.visibilityState==='hidden'){privateScopeReady=false;clearPrivateUrls();renderPrivateChoices();syncPetChoices();syncPanelState();}
+    else void loadPrivatePets();
   });
   $('.sw-close').addEventListener('click', () => showPanel(false));
   root.addEventListener('keydown', e => { if (e.key === 'Escape' && isPanelOpen()) showPanel(false); });
