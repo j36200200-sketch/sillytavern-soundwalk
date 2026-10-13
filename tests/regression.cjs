@@ -91,8 +91,8 @@ async function media(page) {
     db.close();return output;
   });
 }
-async function fixture(browser, origin, raw, withMedia=true, viewport={width:360,height:800}) {
-  const context=await browser.newContext({viewport,acceptDownloads:true}); contexts.push(context);
+async function fixture(browser, origin, raw, withMedia=true, viewport={width:360,height:800}, contextOptions={}) {
+  const context=await browser.newContext({viewport,acceptDownloads:true,...contextOptions}); contexts.push(context);
   const page=await context.newPage(); page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept());
   await page.addInitScript(() => {
@@ -140,6 +140,10 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
   const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE_PATH||undefined,
     args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   try {
+    if(process.env.CUSTOM_ONLY==='1') {
+      await require('./custom-icons.cjs')({browser,origin,target,fixture,test,until,open,upload,download,media,settings,artifacts});
+      assert.deepEqual(errors,[]);console.log(`${results.length} custom icon checks passed`);return;
+    }
     if(process.env.NETWORK_ONLY==='1') {
       await require('./network-playback.cjs')({browser,origin,fixture,test,until,range,open,upload,wav,artifacts});
       assert.deepEqual(errors,[]);console.log(`${results.length} network regression checks passed`);return;
@@ -378,6 +382,7 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
     });
     await require('./network-playback.cjs')({browser,origin,fixture,test,until,range,open,upload,wav,artifacts});
     await require('./smart-loading.cjs')({browser,origin,fixture,test,until,open,upload,download,media,settings,wav,artifacts});
+    await require('./custom-icons.cjs')({browser,origin,target,fixture,test,until,open,upload,download,media,settings,artifacts});
     assert.deepEqual(errors,[]);
     console.log(`${results.length} browser regression checks passed; artifacts: ${artifacts}`);
   }finally{for(const ctx of contexts)await ctx.close();await browser.close();for(const s of servers)s.close();}
