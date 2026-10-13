@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.20';
+const VERSION = '1.3.21';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -25,7 +25,9 @@ const isPrivatePet = pet => typeof pet==='string'&&/^private:icon-[\w-]{1,110}$/
 const galleryKey = (scope,id) => PRIVATE_GALLERY_PREFIX+encodeURIComponent(scope)+':'+id;
 function galleryRecord(raw) {
   if(!raw||typeof raw.id!=='string'||!/^icon-[\w-]{1,110}$/.test(raw.id))throw new Error('私人图库记录损坏');
-  return {id:raw.id,name:cleanText(raw.name,32)||'私人图标'};
+  const states=raw.states===undefined?['closed','open']:raw.states;
+  if(!Array.isArray(states)||!states.length||states.length>2||states.some(state=>!['closed','open'].includes(state)))throw new Error('私人图标显示位置损坏');
+  return {id:raw.id,name:cleanText(raw.name,32)||'私人图标',states:['closed','open'].filter(state=>states.includes(state))};
 }
 async function resolvePrivateScope() {
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
@@ -532,7 +534,7 @@ function init() {
           <p class="sw-custom-hint">PNG、WebP、JPG，最大8MB。透明图片保留透明轮廓；完整缩放，不裁切。</p>
           <div class="sw-custom-pet-actions"><button type="button" data-custom-upload="closed" disabled>添加收起图标</button><button type="button" data-custom-upload="open" disabled>添加展开图标</button><button type="button" data-custom-upload="both" disabled>添加并两状态共用</button><button class="sw-custom-reset" type="button" disabled>恢复默认猫狗</button><button class="sw-gallery-migrate" type="button" hidden>导入旧版未分区图标</button></div>
           <p class="sw-gallery-scope sw-custom-hint"></p>
-          <p class="sw-custom-hint">上传只会新增，图片会出现在上面的两组选项中；可改名或单独删除。最多60张，图片合计16MB。</p>
+          <p class="sw-custom-hint">上传只会新增到指定组选项；两状态共用才同时加入两组。每张图可调整显示位置、改名或删除。最多60张，图片合计16MB。</p>
           <output class="sw-custom-status" aria-live="polite">正在读取本地图标…</output>
           <p class="sw-custom-hint">请使用自己拥有使用权限的图片，并尊重原作者及画师的版权。</p>
           <p class="sw-custom-hint">图片仅存于本浏览器，不上传服务器。歌单 JSON 不含图标；完整备份会包含私人图片，请勿公开分享。</p>
@@ -874,12 +876,16 @@ function init() {
     root.querySelectorAll('[data-private-card]').forEach(el=>el.remove());
     if(!privateScopeReady)return;
     for(const state of ['closed','open'])for(const item of galleryMeta.items){
+      if(!item.states.includes(state))continue;
       const card=document.createElement('div');card.className='sw-private-card';card.dataset.privateCard=item.id;
       const choice=document.createElement('button');choice.type='button';choice.className='sw-pet-choice sw-private-choice';choice.dataset.state=state;choice.dataset.pet='private:'+item.id;
       const thumb=document.createElement('span');thumb.className='sw-pet-thumb';
       if(privatePetUrls.has(item.id))thumb.append(privatePetImage(item.id));else thumb.textContent='?';
       const name=document.createElement('span');name.textContent=item.name;name.title=item.name;
       choice.append(thumb,name);card.append(choice);
+      const position=document.createElement('select');position.className='sw-gallery-position';position.dataset.galleryStates='';position.dataset.iconId=item.id;position.setAttribute('aria-label',item.name+'的显示位置');
+      for(const [value,label] of [['closed','仅收起'],['open','仅展开'],['both','两状态共用']]){const option=document.createElement('option');option.value=value;option.textContent=label;position.append(option);}
+      position.value=item.states.length===2?'both':item.states[0];card.append(position);
       const actions=document.createElement('div');actions.className='sw-custom-pet-actions';
       for(const [action,label] of [['rename','改名'],['delete','删除']]){const b=document.createElement('button');b.type='button';b.dataset.galleryAction=action;b.dataset.iconId=item.id;b.textContent=label;actions.append(b);}
       card.append(actions);$(`.sw-pet-${state==='closed'?'closed':'open'}-choices`).append(card);
@@ -891,7 +897,7 @@ function init() {
       button.setAttribute('aria-pressed',String(selected));button.classList.toggle('sw-selected',selected);
       button.disabled=privatePetBusy||(isPrivatePet(pet)&&(!privateScopeReady||!privatePetUrls.has(pet.slice(8))));
     });
-    root.querySelectorAll('[data-custom-upload],[data-gallery-action]').forEach(b=>b.disabled=privatePetBusy||!privateScopeReady);
+    root.querySelectorAll('[data-custom-upload],[data-gallery-action],[data-gallery-states]').forEach(b=>b.disabled=privatePetBusy||!privateScopeReady);
     $('.sw-custom-reset').disabled=privatePetBusy;
     $('.sw-gallery-migrate').hidden=!legacyAvailable||!privateScopeReady;
     $('.sw-gallery-migrate').disabled=privatePetBusy;
@@ -951,8 +957,8 @@ function init() {
       privateScopeReady=true;
       closedPet=normalizePet('closed',galleryMeta.selections.closed||(!isPrivatePet(closedPet)&&closedPet!=='custom'?closedPet:'cat'));
       openPet=normalizePet('open',galleryMeta.selections.open||(!isPrivatePet(openPet)&&openPet!=='custom'?openPet:'golden'));
-      if(isPrivatePet(closedPet)&&!privatePetUrls.has(closedPet.slice(8)))closedPet='cat';
-      if(isPrivatePet(openPet)&&!privatePetUrls.has(openPet.slice(8)))openPet='golden';
+      if(isPrivatePet(closedPet)&&(!privatePetUrls.has(closedPet.slice(8))||!galleryMeta.items.some(x=>'private:'+x.id===closedPet&&x.states.includes('closed'))))closedPet='cat';
+      if(isPrivatePet(openPet)&&(!privatePetUrls.has(openPet.slice(8))||!galleryMeta.items.some(x=>'private:'+x.id===openPet&&x.states.includes('open'))))openPet='golden';
     }catch(e){failed=true;galleryMeta={items:[],selections:{},revision:0};$('.sw-gallery-scope').textContent=e.message||'图库暂时不可用';closedPet=isPrivatePet(closedPet)||closedPet==='custom'?'cat':closedPet;openPet=isPrivatePet(openPet)||openPet==='custom'?'golden':openPet;}
     finally{privatePetBusy=false;renderPrivateChoices();syncPetChoices();syncPanelState();persist();$('.sw-custom-status').textContent=failed?'部分图标无法读取，原文件保留；请重试或删除损坏记录。':`我的私人图库：${galleryMeta.items.length} / 60 张。上传会新增，不会覆盖。`;}
   }
@@ -2180,7 +2186,7 @@ function init() {
       throw new Error('备份缺少正在使用的私人图标，已停止恢复');
     if(meta.version>=5){
       if(gallery.items.some(x=>!keys.has('privatePet:'+x.id))||pieces.filter(x=>x.kind==='privatePet').reduce((sum,x)=>sum+x.blob.size,0)>PRIVATE_GALLERY_BYTES)throw new Error('备份私人图库图片缺失或容量超限');
-      for(const state of ['closed','open'])if(gallery.selections[state]==='custom'||(isPrivatePet(gallery.selections[state])&&!galleryIds.has(gallery.selections[state].slice(8))))throw new Error('备份选择的私人图标缺失');
+      for(const state of ['closed','open'])if(gallery.selections[state]==='custom'||(isPrivatePet(gallery.selections[state])&&!gallery.items.some(x=>x.id===gallery.selections[state].slice(8)&&x.states.includes(state))))throw new Error('备份选择的私人图标缺失或显示位置不符');
     }
     if(meta.version>=3){
       for(let i=0;i<pieces.length;i++){
@@ -2199,7 +2205,7 @@ function init() {
       gallery={items:[],selections:{closed:normalizePet('closed',meta.settings.closedPet),open:normalizePet('open',meta.settings.openPet)}};
       for(const state of ['closed','open']){
         const piece=pieces.find(x=>x.kind==='privatePet'&&x.id===PRIVATE_PET_KEYS[state]);
-        if(piece){piece.storageId='icon-legacy-'+state;gallery.items.push({id:piece.storageId,name:state==='closed'?'旧版收起图标':'旧版展开图标'});if(gallery.selections[state]==='custom')gallery.selections[state]='private:'+piece.storageId;}
+        if(piece){piece.storageId='icon-legacy-'+state;gallery.items.push({id:piece.storageId,name:state==='closed'?'旧版收起图标':'旧版展开图标',states:[state]});if(gallery.selections[state]==='custom')gallery.selections[state]='private:'+piece.storageId;}
       }
     }
     return {meta,tracks,pieces,keys,gallery,verified:meta.version>=3};
@@ -2476,12 +2482,25 @@ function init() {
       if(galleryMeta.items.length+files.length>PRIVATE_GALLERY_MAX)throw new Error('私人图库最多60张，本次未新增，请减少图片数量');
       const adds=[];let total=0;
       for(const item of galleryMeta.items){const b=await coverAction('get',galleryKey(privateScope,item.id));total+=b?.size||0;}
-      for(const file of files){const blob=await makePrivatePetBlob(file);total+=blob.size;if(total>PRIVATE_GALLERY_BYTES)throw new Error('私人图库图片合计不能超过16MB，请删除不需要的图片');adds.push({id:'icon-'+uid(),name:cleanText(file.name?.replace(/\.[^.]+$/,''),32)||'私人图标',blob});}
+      for(const file of files){const blob=await makePrivatePetBlob(file);total+=blob.size;if(total>PRIVATE_GALLERY_BYTES)throw new Error('私人图库图片合计不能超过16MB，请删除不需要的图片');adds.push({id:'icon-'+uid(),name:cleanText(file.name?.replace(/\.[^.]+$/,''),32)||'私人图标',states:target==='both'?['closed','open']:[target],blob});}
       const last='private:'+adds[adds.length-1].id,selections={closed:closedPet,open:openPet};
       if(target==='both'){selections.closed=last;selections.open=last;}else selections[target]=last;
-      await galleryWrite({...galleryMeta,items:[...galleryMeta.items,...adds.map(({id,name})=>({id,name}))],selections},adds);
+      await galleryWrite({...galleryMeta,items:[...galleryMeta.items,...adds.map(({id,name,states})=>({id,name,states}))],selections},adds);
       await loadPrivatePets();$('.sw-custom-status').textContent=`已新增 ${adds.length} 张，原有图片全部保留。`;
     }catch(e){$('.sw-custom-status').textContent=e.message||'新增失败，原图库已保留';}
+    finally{privatePetBusy=false;syncPetChoices();syncPanelState();requestAnimationFrame(positionPanelNearOrb);}
+  });
+  root.addEventListener('change',async event=>{
+    const control=event.target.closest('[data-gallery-states]');if(!control||!canEditPrivatePets())return;
+    const id=control.dataset.iconId,item=galleryMeta.items.find(x=>x.id===id),value=control.value;
+    if(!item||!['closed','open','both'].includes(value))return;
+    const states=value==='both'?['closed','open']:[value],selections={closed:closedPet,open:openPet};
+    for(const state of ['closed','open'])if(!states.includes(state)&&selections[state]==='private:'+id)selections[state]=DEFAULT_PETS[state];
+    privatePetBusy=true;syncPetChoices();
+    try{
+      await galleryWrite({...galleryMeta,items:galleryMeta.items.map(x=>x.id===id?{...x,states}:x),selections});
+      await loadPrivatePets();$('.sw-custom-status').textContent='显示位置已更新，图片仍保留在私人图库中。';
+    }catch(e){renderPrivateChoices();$('.sw-custom-status').textContent=e.message;}
     finally{privatePetBusy=false;syncPetChoices();syncPanelState();requestAnimationFrame(positionPanelNearOrb);}
   });
   root.addEventListener('click',async event=>{
@@ -2513,8 +2532,8 @@ function init() {
     if(!window.confirm('旧版图片没有账号归属。确认它们属于你，并导入当前图库？原文件会保留；其他账号不会自动获得。'))return;
     privatePetBusy=true;syncPetChoices();
     try{const old=await privatePetAction('get'),adds=[],selections={closed:closedPet,open:openPet};
-      for(const state of ['closed','open'])if(old[state]!==undefined){const url=await privatePetUrl(old[state]);URL.revokeObjectURL(url);const id='icon-'+uid();adds.push({id,name:state==='closed'?'旧版收起图标':'旧版展开图标',blob:old[state]});if(galleryMeta.selections[state]===undefined&&settings[state==='closed'?'closedPet':'openPet']==='custom')selections[state]='private:'+id;}
-      await galleryWrite({...galleryMeta,items:[...galleryMeta.items,...adds.map(({id,name})=>({id,name}))],selections},adds,[],true);legacyAvailable=false;await loadPrivatePets();
+      for(const state of ['closed','open'])if(old[state]!==undefined){const url=await privatePetUrl(old[state]);URL.revokeObjectURL(url);const id='icon-'+uid();adds.push({id,name:state==='closed'?'旧版收起图标':'旧版展开图标',states:[state],blob:old[state]});if(galleryMeta.selections[state]===undefined&&settings[state==='closed'?'closedPet':'openPet']==='custom')selections[state]='private:'+id;}
+      await galleryWrite({...galleryMeta,items:[...galleryMeta.items,...adds.map(({id,name,states})=>({id,name,states}))],selections},adds,[],true);legacyAvailable=false;await loadPrivatePets();
     }catch(e){$('.sw-custom-status').textContent=e.message;}
     finally{privatePetBusy=false;syncPetChoices();syncPanelState();}
   });

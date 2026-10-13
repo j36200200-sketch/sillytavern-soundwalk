@@ -18,21 +18,22 @@ module.exports=async({browser,origin,target,fixture,test,until,open,upload,downl
  const file=(b,i=0,type='png')=>({name:'Private '+i+'.'+type,mimeType:'image/'+type,buffer:b});
  async function choose(page,id,state='closed'){await page.locator(`.sw-private-choice[data-state="${state}"][data-pet="private:${id}"]`).tap();await ready(page);assert.equal((await data(page)).selections[state],'private:'+id);}
  async function scope(page,user){await page.setExtraHTTPHeaders({'X-Test-User':user});await page.reload();await ready(page);await open(page);await page.locator('.sw-pet-settings-toggle').click();await ready(page);}
- await test('five consecutive private uploads are appended beside builtins; the sixth preserves all five',async()=>{
+ await test('closed uploads append only to closed choices; shared sixth preserves all five and joins both states',async()=>{
   for(let i=0;i<5;i++)await add(p,'closed',[file(imgs[i],i)]);
-  const first=await data(p);assert.equal(first.items.length,5);assert.equal(await p.locator('.sw-pet-closed-choices .sw-private-choice').count(),5);assert.equal(await p.locator('.sw-pet-open-choices .sw-private-choice').count(),5);
+  const first=await data(p);assert.equal(first.items.length,5);assert.equal(await p.locator('.sw-pet-closed-choices .sw-private-choice').count(),5);assert.equal(await p.locator('.sw-pet-open-choices .sw-private-choice').count(),0);assert.equal(first.selections.open,'shepherd');assert(first.items.every(x=>JSON.stringify(x.states)==='["closed"]'));
   const before=await Promise.all(first.items.map(x=>bytes(p,x.id)));await add(p,'both',[file(imgs[5],5)]);
   const all=await data(p);assert.deepEqual(all.items.slice(0,5),first.items);assert.equal(all.items.length,6);
+  assert.equal(await p.locator('.sw-pet-closed-choices .sw-private-choice').count(),6);assert.equal(await p.locator('.sw-pet-open-choices .sw-private-choice').count(),1);assert.deepEqual(all.items[5].states,['closed','open']);
   assert.deepEqual(await Promise.all(first.items.map(x=>bytes(p,x.id))),before);assert.equal(all.selections.closed,all.selections.open);
   const now=await media(p);assert.deepEqual(now.tracks,originals.tracks);assert.deepEqual(now.covers.filter(([id])=>!id.startsWith(PREFIX)),originals.covers);
  });
  await test('any gallery image can be selected independently, renamed, restored after reload and reset without deletion',async()=>{
-  const all=await data(p);await choose(p,all.items[1].id);await choose(p,all.items[3].id,'open');
+  const all=await data(p);await choose(p,all.items[1].id);await choose(p,all.items[5].id,'open');
   p.removeAllListeners('dialog');p.on('dialog',d=>d.type()==='prompt'?d.accept('My portrait'):d.accept());
   await p.locator(`[data-gallery-action="rename"][data-icon-id="${all.items[1].id}"]`).first().click();await ready(p);assert.equal((await data(p)).items[1].name,'My portrait');
   await p.reload();await ready(p);assert((await p.locator('.sw-orb-pet img').getAttribute('src')).startsWith('blob:'));await open(p);await p.locator('.sw-pet-settings-toggle').click();await ready(p);
-  assert.equal((await data(p)).selections.open,'private:'+all.items[3].id);await p.locator('.sw-custom-reset').click();await ready(p);assert.equal((await data(p)).items.length,6);assert.equal((await data(p)).selections.closed,'cat');
-  await choose(p,all.items[1].id);await choose(p,all.items[3].id,'open');
+  assert.equal((await data(p)).selections.open,'private:'+all.items[5].id);assert.equal(await p.locator('.sw-pet-open-choices .sw-private-choice').count(),1);await p.locator('.sw-custom-reset').click();await ready(p);assert.equal((await data(p)).items.length,6);assert.equal((await data(p)).selections.closed,'cat');
+  await choose(p,all.items[1].id);await choose(p,all.items[5].id,'open');
   await p.locator('.sw-custom-pets').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(artifacts,'private-gallery-mobile.png')});
   assert(await p.locator('.sw-panel-content').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
   await p.locator('.sw-close').click();assert((await p.locator('.sw-orb-pet img').getAttribute('src')).startsWith('blob:'));
@@ -60,6 +61,7 @@ module.exports=async({browser,origin,target,fixture,test,until,open,upload,downl
   assert.deepEqual(values,[[255,0,0,255],[255,0,0,255],[0,0,0,0],[0,0,0,0]]);
   for(const type of ['webp','jpeg']){const b=Buffer.from(await p.evaluate(async type=>{const c=document.createElement('canvas');c.width=80;c.height=40;c.getContext('2d').fillRect(0,0,80,40);const b=await new Promise(resolve=>c.toBlob(resolve,'image/'+type));return Array.from(new Uint8Array(await b.arrayBuffer()));},type));await add(p,'open',[file(b,type,type)]);}
   assert.equal((await data(p)).items.length,7);
+  const after=await data(p);assert(after.items.slice(-2).every(x=>JSON.stringify(x.states)==='["open"]'));assert.equal(after.selections.closed,'cat');assert.equal(await p.locator('.sw-pet-closed-choices .sw-private-choice').count(),5);assert.equal(await p.locator('.sw-pet-open-choices .sw-private-choice').count(),3);
   assert(requests.every(r=>r.method==='GET'&&(r.url.startsWith(origin+'/')||r.url.startsWith('blob:'+origin+'/'))));
   assert(!(await p.evaluate(()=>localStorage.getItem('soundwalk-player-v1'))).includes('data:image'));
  });
@@ -82,6 +84,7 @@ module.exports=async({browser,origin,target,fixture,test,until,open,upload,downl
  await test('v5 backup restores gallery, names and selections into recipient account; corrupt media cannot overwrite it',async()=>{
   await upload(dest,'.sw-backup-input',backup,'gallery.swbackup');await until(async()=>/安全恢复完成/.test(await dest.locator('.sw-notice').textContent()));
   const a=await data(p),d=await data(dest,'account:recipient');assert.deepEqual(d.items,a.items);assert.deepEqual(d.selections,a.selections);
+  await dest.locator('.sw-pet-settings-toggle').click();await ready(dest);assert.equal(await dest.locator('.sw-pet-closed-choices .sw-private-choice').count(),5);assert.equal(await dest.locator('.sw-pet-open-choices .sw-private-choice').count(),3);
   for(const item of a.items)assert.deepEqual((await bytes(dest,item.id,'account:recipient')).slice(1),(await bytes(p,item.id)).slice(1));
   const before=await media(dest),bad=Buffer.from(backup);bad[bad.length-1]^=1;await upload(dest,'.sw-backup-input',bad,'bad.swbackup');await until(async()=>/校验失败/.test(await dest.locator('.sw-notice').textContent()));assert.deepEqual(await media(dest),before);
   const directory=await data(dest,'account:recipient');
@@ -94,7 +97,26 @@ module.exports=async({browser,origin,target,fixture,test,until,open,upload,downl
   m.entries=m.entries.flatMap(entry=>{const bytes=backup.subarray(offset,offset+entry.size);offset+=entry.size;if(entry.kind==='privatePet'){if(count>=2)return [];entry.id='__soundwalk_private_icon_'+(['closed','open'][count++])+'_v1__';}parts.push(bytes);return [entry];});
   m.version=4;delete m.settings.privateGallery;m.settings.closedPet=m.settings.openPet='custom';delete m.metadataCrc32;m.metadataCrc32=crc32(Buffer.from(JSON.stringify(m))).toString(16).padStart(8,'0');const info=Buffer.from(JSON.stringify(m));
   const legacy=Buffer.concat([Buffer.from('SWBK1\n'+String(info.length).padStart(12,'0')),info,...parts]);await upload(dest,'.sw-backup-input',legacy,'v4.swbackup');await until(async()=>/安全恢复完成/.test(await dest.locator('.sw-notice').textContent()));
-  const d=await data(dest,'account:recipient');assert.equal(d.items.length,2);assert.equal(d.selections.closed,'private:icon-legacy-closed');assert.equal(d.selections.open,'private:icon-legacy-open');
+  const d=await data(dest,'account:recipient');assert.equal(d.items.length,2);assert.equal(d.selections.closed,'private:icon-legacy-closed');assert.equal(d.selections.open,'private:icon-legacy-open');assert.deepEqual(d.items.map(x=>x.states),[['closed'],['open']]);assert.equal(await dest.locator('.sw-pet-closed-choices .sw-private-choice').count(),1);assert.equal(await dest.locator('.sw-pet-open-choices .sw-private-choice').count(),1);
+ });
+ await test('v1.3.20 v5 backups without state tags retain every image and both existing selections',async()=>{
+  const n=Number(backup.subarray(6,18).toString()),m=JSON.parse(backup.subarray(18,18+n));for(const item of m.settings.privateGallery)delete item.states;
+  delete m.metadataCrc32;m.metadataCrc32=crc32(Buffer.from(JSON.stringify(m))).toString(16).padStart(8,'0');const info=Buffer.from(JSON.stringify(m));const v20=Buffer.concat([Buffer.from('SWBK1\n'+String(info.length).padStart(12,'0')),info,backup.subarray(18+n)]);
+  await upload(dest,'.sw-backup-input',v20,'v20.swbackup');await until(async()=>/安全恢复完成/.test(await dest.locator('.sw-notice').textContent()));
+  const d=await data(dest,'account:recipient');assert.equal(d.items.length,7);assert(d.items.every(x=>JSON.stringify(x.states)==='["closed","open"]'));assert.deepEqual(d.selections,(await data(p)).selections);assert.equal(await dest.locator('.sw-pet-closed-choices .sw-private-choice').count(),7);assert.equal(await dest.locator('.sw-pet-open-choices .sw-private-choice').count(),7);
+ });
+ await test('existing v20 gallery stays intact; state controls move choices without deleting bytes and reset only excluded selections',async()=>{
+  const legacy=await fixture(browser,target,{tracks:[],orbPosition:{x:0,y:.1}},false,undefined,{extraHTTPHeaders:{'X-Test-User':'v20-user'}});await ready(legacy);
+  const png=await bytes(p,(await data(p)).items[0].id),items=[{id:'icon-v20-first',name:'Old first'},{id:'icon-v20-second',name:'Old second'}],selections={closed:'private:icon-v20-first',open:'private:icon-v20-second'},user='account:v20-user';
+  await legacy.evaluate(async({items,selections,png,prefix})=>{const db=await new Promise(resolve=>{const r=indexedDB.open('soundwalk-player-audio-v1',2);r.onsuccess=()=>resolve(r.result);});await new Promise(resolve=>{const tx=db.transaction('covers','readwrite'),s=tx.objectStore('covers');for(const item of items)s.put(new Blob([new Uint8Array(png)],{type:'image/png'}),prefix+item.id);s.put({items,selections,revision:1},prefix+'meta');tx.oncomplete=resolve;});db.close();},{items,selections,png:png[2],prefix:PREFIX+encodeURIComponent(user)+':'});
+  await legacy.reload();await ready(legacy);await open(legacy);await legacy.locator('.sw-pet-settings-toggle').click();await ready(legacy);
+  assert.equal(await legacy.locator('.sw-pet-closed-choices .sw-private-choice').count(),2);assert.equal(await legacy.locator('.sw-pet-open-choices .sw-private-choice').count(),2);const before=await media(legacy);
+  const set=async(id,value)=>{await legacy.locator(`[data-gallery-states][data-icon-id="${id}"]`).first().selectOption(value);await ready(legacy);};
+  await set(items[0].id,'closed');await set(items[1].id,'open');assert.deepEqual((await data(legacy,user)).selections,selections);assert.equal(await legacy.locator('.sw-pet-closed-choices .sw-private-choice').count(),1);assert.equal(await legacy.locator('.sw-pet-open-choices .sw-private-choice').count(),1);
+  await set(items[0].id,'open');assert.equal((await data(legacy,user)).selections.closed,'cat');assert.equal((await data(legacy,user)).selections.open,selections.open);assert.equal(await legacy.locator('.sw-pet-closed-choices .sw-private-choice').count(),0);
+  await set(items[0].id,'both');await legacy.locator(`.sw-private-choice[data-state="closed"][data-pet="${selections.closed}"]`).click();await ready(legacy);await legacy.locator(`.sw-private-choice[data-state="open"][data-pet="${selections.closed}"]`).click();await ready(legacy);
+  await set(items[0].id,'closed');assert.deepEqual((await data(legacy,user)).selections,{closed:selections.closed,open:'golden'});
+  await legacy.reload();await ready(legacy);await open(legacy);await legacy.locator('.sw-pet-settings-toggle').click();await ready(legacy);assert.equal(await legacy.locator('.sw-pet-closed-choices .sw-private-choice').count(),1);assert.equal(await legacy.locator('.sw-pet-open-choices .sw-private-choice').count(),1);assert.deepEqual(await media(legacy),before);assert.deepEqual((await data(legacy,user)).items.map(x=>x.states),[['closed'],['open']]);
  });
  await test('legacy unscoped files require explicit one-time import and are not assigned to a second account',async()=>{
   const old=await fixture(browser,target,{tracks:[],closedPet:'custom',openPet:'custom',orbPosition:{x:0,y:.1}},false,undefined,{extraHTTPHeaders:{'X-Test-User':'legacy-owner'}});await ready(old);
@@ -103,7 +125,7 @@ module.exports=async({browser,origin,target,fixture,test,until,open,upload,downl
   await old.evaluate(()=>{const v=JSON.parse(localStorage.getItem('soundwalk-player-v1'));v.closedPet=v.openPet='custom';localStorage.setItem('soundwalk-player-v1',JSON.stringify(v));});
   await old.reload();await ready(old);assert.equal((await settings(old)).closedPet,'custom');await old.reload();await ready(old);await open(old);await old.locator('.sw-pet-settings-toggle').click();await ready(old);assert.equal(await old.locator('.sw-private-choice').count(),0);assert(await old.locator('.sw-gallery-migrate').isVisible());
   const legacyFiles=(await media(old)).covers.filter(([id])=>id.startsWith('__soundwalk_private_icon_'));
-  await old.locator('.sw-gallery-migrate').click();await ready(old);const migrated=await data(old,'account:legacy-owner');assert.equal(migrated.items.length,2);assert.equal(migrated.selections.closed,'private:'+migrated.items[0].id);assert.equal(migrated.selections.open,'private:'+migrated.items[1].id);assert.deepEqual((await media(old)).covers.filter(([id])=>id.startsWith('__soundwalk_private_icon_')),legacyFiles);
+  await old.locator('.sw-gallery-migrate').click();await ready(old);const migrated=await data(old,'account:legacy-owner');assert.equal(migrated.items.length,2);assert.equal(migrated.selections.closed,'private:'+migrated.items[0].id);assert.equal(migrated.selections.open,'private:'+migrated.items[1].id);assert.deepEqual(migrated.items.map(x=>x.states),[['closed'],['open']]);assert.deepEqual((await media(old)).covers.filter(([id])=>id.startsWith('__soundwalk_private_icon_')),legacyFiles);
   await scope(old,'legacy-other');assert.equal(await old.locator('.sw-private-choice').count(),0);assert(await old.locator('.sw-gallery-migrate').isHidden());
  });
  await test('unknown account environment clearly warns about browser-only isolation',async()=>{
