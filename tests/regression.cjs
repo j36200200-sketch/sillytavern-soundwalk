@@ -194,11 +194,12 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
         assert(await page.locator('.sw-panel-content').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
       }
     });
-    await test('all 25 original and new stickers load and new choices persist independently',async()=>{
+    await test('all 31 original and new stickers load and new choices persist independently',async()=>{
       if(await page.locator('.sw-appearance').isVisible())await page.locator('.sw-appearance-toggle').click();
       await page.locator('.sw-pet-settings-toggle').click();
-      assert.equal(await page.locator('.sw-pet-closed-choices button').count(),25);
-      const choices={rabbit:'rabbit-v138',whiteCat:'white-cat-v138',fox:'fox-v138',bear:'bear-v138',deer:'deer-v138',otter:'otter-v138',penguin:'penguin-v138',parrot:'parrot-v138',peacock:'peacock-v138',peacockFan:'peacock-fan-v138',jellyfish:'jellyfish-v139',spider:'spider-v139',beagle:'beagle-v139',orca:'orca-v139',octopus:'octopus-v139',blackOctopus:'black-octopus-v139',user:'user-v1317'};
+      assert.equal(await page.locator('.sw-pet-closed-choices button').count(),31);
+      const choices={rabbit:'rabbit-v138',whiteCat:'white-cat-v138',fox:'fox-v138',bear:'bear-v138',deer:'deer-v138',otter:'otter-v138',penguin:'penguin-v138',parrot:'parrot-v138',peacock:'peacock-v138',peacockFan:'peacock-fan-v138',jellyfish:'jellyfish-v139',spider:'spider-v139',beagle:'beagle-v139',orca:'orca-v139',octopus:'octopus-v139',blackOctopus:'black-octopus-v139',user:'user-v1317',
+        userJiangshi:'user-jiangshi-v1318',userGhost:'user-ghost-v1318',userEmperor:'user-emperor-v1318',userDevil:'user-devil-v1318',userAngel:'user-angel-v1318',userVampire:'user-vampire-v1318'};
       await until(()=>page.locator('.sw-pet-thumb img').evaluateAll(images=>images.every(img=>img.complete&&img.naturalWidth>0)));
       await page.screenshot({path:path.join(artifacts,'pet-wardrobe.png')});
       for(const [id,file] of Object.entries(choices)){
@@ -268,8 +269,10 @@ async function fixture(browser, origin, raw, withMedia=true, viewport={width:360
       assert.equal(s.volume,.4);assert.equal(s.panelOpacity,75);assert.equal(s.frostBlur,16);
       assert.deepEqual(await media(dest),before);
     });
-    await test('black octopus and User sticker survive full backup restore and reload',async()=>{
-      for(const [id,file] of [['blackOctopus','black-octopus-v139'],['user','user-v1317']]){
+    await test('black octopus and all seven User stickers survive full backup restore and reload',async()=>{
+      for(const [id,file] of [['blackOctopus','black-octopus-v139'],['user','user-v1317'],
+        ['userJiangshi','user-jiangshi-v1318'],['userGhost','user-ghost-v1318'],['userEmperor','user-emperor-v1318'],
+        ['userDevil','user-devil-v1318'],['userAngel','user-angel-v1318'],['userVampire','user-vampire-v1318']]){
         const length=Number(backup.subarray(6,18).toString()),meta=JSON.parse(backup.subarray(18,18+length));
         delete meta.metadataCrc32;meta.settings.closedPet=id;
         meta.metadataCrc32=crc32(Buffer.from(JSON.stringify(meta))).toString(16).padStart(8,'0');

@@ -3,7 +3,7 @@
  * MIT License. No bundled songs, copyrighted artwork, or third-party player code.
  */
 const ROOT_ID = 'soundwalk-player-root';
-const VERSION = '1.3.17';
+const VERSION = '1.3.18';
 const STORE_KEY = 'soundwalk-player-v1';
 const MAX_TRACKS = 300;
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
@@ -58,6 +58,12 @@ const petAssets = Object.freeze({
   octopus: new URL('./assets/pets/pet-octopus-v139.webp', import.meta.url).href,
   blackOctopus: new URL('./assets/pets/pet-black-octopus-v139.webp', import.meta.url).href,
   user: new URL('./assets/pets/pet-user-v1317.webp', import.meta.url).href,
+  userJiangshi: new URL('./assets/pets/pet-user-jiangshi-v1318.webp', import.meta.url).href,
+  userGhost: new URL('./assets/pets/pet-user-ghost-v1318.webp', import.meta.url).href,
+  userEmperor: new URL('./assets/pets/pet-user-emperor-v1318.webp', import.meta.url).href,
+  userDevil: new URL('./assets/pets/pet-user-devil-v1318.webp', import.meta.url).href,
+  userAngel: new URL('./assets/pets/pet-user-angel-v1318.webp', import.meta.url).href,
+  userVampire: new URL('./assets/pets/pet-user-vampire-v1318.webp', import.meta.url).href,
 });
 const petIcons = {
   cat: `<img class="sw-pet-art sw-pet-raster" src="${petAssets.cat}" alt="软乎乎黑猫" draggable="false" decoding="async" />`,
@@ -84,17 +90,26 @@ const petIcons = {
   orca: `<img class="sw-pet-art" src="${petAssets.orca}" alt="黑白小虎鲸" draggable="false" decoding="async" />`,
   octopus: `<img class="sw-pet-art" src="${petAssets.octopus}" alt="橙色小章鱼" draggable="false" decoding="async" />`,
   blackOctopus: `<img class="sw-pet-art" src="${petAssets.blackOctopus}" alt="长触手黑色章鱼" draggable="false" decoding="async" />`,
-  user: `<img class="sw-pet-art" src="${petAssets.user}" alt="写着 User 的白色面团小人" draggable="false" decoding="async" />`
+  user: `<img class="sw-pet-art" src="${petAssets.user}" alt="写着 User 的白色面团小人" draggable="false" decoding="async" />`,
+  userJiangshi: `<img class="sw-pet-art" src="${petAssets.userJiangshi}" alt="戴僵尸帽的 User 小僵尸" draggable="false" decoding="async" />`,
+  userGhost: `<img class="sw-pet-art" src="${petAssets.userGhost}" alt="带两团鬼火的 User 小幽灵" draggable="false" decoding="async" />`,
+  userEmperor: `<img class="sw-pet-art" src="${petAssets.userEmperor}" alt="穿龙袍的 User 小皇帝" draggable="false" decoding="async" />`,
+  userDevil: `<img class="sw-pet-art" src="${petAssets.userDevil}" alt="红角蝠翼的 User 小恶魔" draggable="false" decoding="async" />`,
+  userAngel: `<img class="sw-pet-art" src="${petAssets.userAngel}" alt="金色光环白翅膀的 User 小天使" draggable="false" decoding="async" />`,
+  userVampire: `<img class="sw-pet-art" src="${petAssets.userVampire}" alt="红披风的 User 小吸血鬼" draggable="false" decoding="async" />`
 };
 const CLOSED_PETS = Object.freeze(['cat', 'golden', 'shepherd', 'owl', 'raven', 'snake', 'wolf', 'samoyed',
   'rabbit', 'whiteCat', 'fox', 'bear', 'deer', 'otter', 'penguin', 'parrot', 'peacock', 'peacockFan',
-  'jellyfish', 'spider', 'beagle', 'orca', 'octopus', 'blackOctopus', 'user']);
+  'jellyfish', 'spider', 'beagle', 'orca', 'octopus', 'blackOctopus', 'user',
+  'userJiangshi', 'userGhost', 'userEmperor', 'userDevil', 'userAngel', 'userVampire']);
 const PET_LABELS = Object.freeze({
   cat: '小黑猫', golden: '金毛小狗', shepherd: '黑背德牧', owl: '雪鸮',
   raven: '乌鸦', snake: '小蛇', wolf: '小狼', samoyed: '萨摩耶',
   rabbit: '小兔子', whiteCat: '小白猫', fox: '小狐狸', bear: '小熊', deer: '小鹿',
   otter: '水獭', penguin: '企鹅', parrot: '鹦鹉', peacock: '孔雀', peacockFan: '开屏孔雀',
-  jellyfish: '水母', spider: '小蜘蛛', beagle: '比格犬', orca: '虎鲸', octopus: '小章鱼', blackOctopus: '黑章鱼', user: 'User 小人'
+  jellyfish: '水母', spider: '小蜘蛛', beagle: '比格犬', orca: '虎鲸', octopus: '小章鱼', blackOctopus: '黑章鱼', user: 'User 小人',
+  userJiangshi: '小僵尸', userGhost: '小幽灵', userEmperor: '小皇帝',
+  userDevil: '小恶魔', userAngel: '小天使', userVampire: '小吸血鬼'
 });
 
 function uid() {
