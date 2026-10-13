@@ -183,6 +183,15 @@
   border-color:var(--sw-mint)!important;
 }
 #soundwalk-player-root .sw-pet-open-choices {margin-bottom:2px;}
+#soundwalk-player-root .sw-custom-pets {display:grid;gap:9px;margin-top:12px;padding:11px;border:1px solid var(--sw-edge);border-radius:12px;background:#07161a55;font-size:12px;min-width:0;}
+#soundwalk-player-root .sw-custom-hint {margin:0;color:var(--sw-muted);font-size:10px;line-height:1.5;overflow-wrap:anywhere;}
+#soundwalk-player-root .sw-custom-pet-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+#soundwalk-player-root .sw-custom-pet-slot {display:grid;gap:6px;min-width:0;}
+#soundwalk-player-root .sw-custom-choice {flex-direction:column;gap:4px;width:100%;font-size:11px;}
+#soundwalk-player-root .sw-custom-pet-actions {display:flex;flex-wrap:wrap;gap:6px;}
+#soundwalk-player-root .sw-custom-pet-actions button {min-width:0;max-width:100%;padding:6px 8px;border-radius:8px;background:#ffffff16;color:var(--sw-cream);font-size:11px;}
+#soundwalk-player-root .sw-custom-pets button:disabled {opacity:.45;cursor:not-allowed;}
+#soundwalk-player-root .sw-custom-status {font-size:10px;color:var(--sw-mint);line-height:1.5;overflow-wrap:anywhere;}
 
 #soundwalk-player-root .sw-now { display:flex; align-items:center; gap:13px; padding:15px 17px 8px; }
 #soundwalk-player-root .sw-scene { width:69px; height:69px; border-radius:15px; position:relative; overflow:hidden; flex-shrink:0; background:linear-gradient(160deg,#466c73,#253f4e 67%,#162833); box-shadow:0 5px 14px #080f1644; }
